@@ -22,6 +22,20 @@ Note: If the repo is already synced via Databricks Repos, importing not needed i
 Data Quality:
 - Configure Great Expectations as a notebook in Databricks and reference Delta tables in `workspace.default`.
 
+Local Test with Postgres + Debezium (optional):
+1. Start the CDC local stack:
+	```bash
+	cd docker_etl_setup/local_stack
+	docker compose up -d
+	```
+2. Register the Debezium connector (wait for Connect to become available):
+	```bash
+	./register_connector.sh debezium-postgres-connector
+	```
+3. Run the streaming notebook `01_stream_trip_events_bronze.py` as a Job in Databricks to read from Debezium topics (e.g., `dbserver1.public.trip_events`) and write to bronze.
+4. Simulate changes with `./simulate_cdc.sh` from the `docker_etl_setup/local_stack` folder. The notebook should ingest these changes in the bronze tables.
+5. Run `02_silver_cleaning.py` and `03_gold_all_scd2.py` to process bronze to silver to gold and validate with the `04_data_quality_trip_fact.py` notebook.
+
 Notes:
 - Replace `/Repos/your-org/...` paths in DAGs with the actual notebook paths in your workspace.
 - Ensure Unity Catalog permissions and Delta table locations are configured for your Databricks workspace.

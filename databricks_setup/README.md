@@ -1,51 +1,16 @@
-# Databricks Lakehouse & DataOps - Structure du Projet
+# Databricks Setup
 
-## 1. Docker (simulation source & streaming)
-- `postgres` : base OLTP simulée
-- `zookeeper` : pour Kafka
-- `kafka` : bus d'événements
-- `debezium` : CDC vers Kafka
+This folder contains DDL for Delta managed tables. Use this to create environment metadata and to initialize the Lakehouse schema in Databricks.
 
-## 2. Databricks (traitement, stockage, orchestration, data quality)
-- Notebooks PySpark :
-  - Ingestion Kafka → bronze (streaming)
-  - Bronze → Silver (nettoyage, parsing, déduplication)
-  - Silver → Gold (SCD2, agrégats, MERGE)
-  - Data Quality (Great Expectations)
-- SQL DDL : création des tables Delta managed
-- Orchestration :
-  - Airflow (optionnel) ou Databricks Workflows
-  - DAGs déclenchant les notebooks Databricks
+Files:
+- `02_create_tables.sql`: Delta table DDLs for bronze/silver/gold tables and dimensions.
 
-## 3. DataOps & CI/CD
-- Scripts/tests Great Expectations
-- Workflows GitHub Actions (tests, data quality, déploiement)
-- Code versionné sur GitHub, synchronisé avec Databricks Repos
+Quick steps:
+1. Go to Databricks SQL editor or a notebook, paste `02_create_tables.sql`, and run to create managed Delta tables under `workspace.default`.
+2. Make sure Unity Catalog or workspace default catalog is configured.
+3. Verify that `workspace.default.trip_events_bronze` and other tables exist before running notebooks.
 
-## 4. Exemple de structure de repo
-
-```
-BigProjectUbearDw/
-├── docker-compose.yml
-├── docker_etl_setup/
-│   └── init/postgres/init.sql
-├── databricks_setup/
-│   ├── 01_create_folders.py
-│   ├── 02_create_tables.sql
-│   ├── 03_stream_trip_events_databricks.py
-│   ├── 04_silver_cleaning_notebook.py
-│   ├── 05_gold_scd2_notebook.py
-│   └── data_quality/
-│       └── gx_trip_fact_suite.py
-├── airflow/
-│   └── dags/
-│       └── orchestrate_databricks.py
-├── .github/
-│   └── workflows/
-│       └── dataops-ci.yml
-└── README.md
-```
-
----
-
-**Tout le traitement, la qualité, l’orchestration et le stockage sont centralisés dans Databricks. Docker ne sert qu’à simuler la source et le streaming.**
+Notes:
+- Tables are managed Delta tables, use `saveAsTable` or Delta SQL `CREATE TABLE` statements.
+- Use DBFS for checkpointing streaming jobs, e.g. `dbfs:/tmp/checkpoints/bronze_topic`.
+- Use `MERGE INTO` for SCD2 in gold notebooks (done via `03_gold_all_scd2.py`).

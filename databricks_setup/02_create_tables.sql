@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS workspace.default.dim_eater (
   effective_start_date TIMESTAMP,
   effective_end_date TIMESTAMP,
   is_current BOOLEAN,
-  version_number INT
+  version_number INT,
+  row_hash STRING
 ) USING DELTA;
 
 CREATE TABLE IF NOT EXISTS workspace.default.dim_merchant (
@@ -53,7 +54,8 @@ CREATE TABLE IF NOT EXISTS workspace.default.dim_merchant (
   effective_start_date TIMESTAMP,
   effective_end_date TIMESTAMP,
   is_current BOOLEAN,
-  version_number INT
+  version_number INT,
+  row_hash STRING
 ) USING DELTA
 PARTITIONED BY (city);
 
@@ -81,7 +83,8 @@ CREATE TABLE IF NOT EXISTS workspace.default.dim_courier (
   effective_start_date TIMESTAMP,
   effective_end_date TIMESTAMP,
   is_current BOOLEAN,
-  version_number INT
+  version_number INT,
+  row_hash STRING
 ) USING DELTA;
 
 CREATE TABLE IF NOT EXISTS workspace.default.dim_location (
@@ -174,77 +177,8 @@ CREATE TABLE IF NOT EXISTS workspace.default.trip_fact (
   weather_condition STRING
 ) USING DELTA
 PARTITIONED BY (date_partition, region_partition);
-CREATE TABLE IF NOT EXISTS workspace.default.trip_events_bronze (
-  event STRING,
-  payload STRING,
-  event_time TIMESTAMP
-)
-USING DELTA;
 
-CREATE TABLE IF NOT EXISTS workspace.default.dim_location (
-  location_id BIGINT,
-  address_line_1 STRING,
-  city STRING,
-  country STRING,
-  latitude DOUBLE,
-  longitude DOUBLE,
-  geohash STRING,
-  h3_index STRING,
-  neighborhood STRING,
-  region_zone STRING
-) USING DELTA
-PARTITIONED BY (region_zone);
-
-CREATE TABLE IF NOT EXISTS workspace.default.dim_merchant (
-  merchant_id BIGINT,
-  merchant_name STRING,
-  city STRING,
-  cuisine_type STRING,
-  average_preparation_minutes INT
-) USING DELTA
-PARTITIONED BY (city);
-
-CREATE TABLE IF NOT EXISTS workspace.default.dim_eater (
-  eater_id BIGINT,
-  eater_uuid STRING,
-  first_name STRING,
-  last_name STRING,
-  email STRING,
-  account_created_date DATE
-) USING DELTA;
-
-CREATE TABLE IF NOT EXISTS workspace.default.dim_courier (
-  courier_id BIGINT,
-  courier_uuid STRING,
-  first_name STRING,
-  last_name STRING,
-  vehicle_type STRING
-) USING DELTA;
-
-CREATE TABLE IF NOT EXISTS workspace.default.dim_date (
-  date_key INT, full_date DATE, day_of_week INT, month_number INT, year INT
-) USING DELTA;
-
-CREATE TABLE IF NOT EXISTS workspace.default.dim_time (
-  time_key INT, time_value STRING, hour_24 INT, minute INT
-) USING DELTA;
-
-CREATE TABLE IF NOT EXISTS workspace.default.trip_fact (
-  trip_id STRING,
-  order_id STRING,
-  eater_id BIGINT,
-  merchant_id BIGINT,
-  courier_id BIGINT,
-  pickup_location_id BIGINT,
-  dropoff_location_id BIGINT,
-  order_placed_at TIMESTAMP,
-  delivered_at TIMESTAMP,
-  subtotal_amount DECIMAL(12,2),
-  total_amount DECIMAL(12,2),
-  distance_miles DOUBLE,
-  delivery_time_minutes INT,
-  trip_status STRING,
-  date_partition DATE,
-  region_partition STRING
-) USING DELTA
-PARTITIONED BY (date_partition, region_partition);
+-- Add updated_at to trip_fact for MERGE timestamp checks
+ALTER TABLE IF EXISTS workspace.default.trip_fact ADD COLUMNS (
+  updated_at TIMESTAMP
+);

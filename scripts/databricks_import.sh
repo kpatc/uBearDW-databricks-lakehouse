@@ -4,7 +4,11 @@ set -euo pipefail
 # Usage: ./scripts/databricks_import.sh <destination_repo_path>
 # Example: ./scripts/databricks_import.sh /Repos/your-org/ubear_dw
 
-DEST_REPO_PATH=${1:-/Repos/your-org/databricks_notebooks}
+DEST_REPO_PATH=${1:-${DATABRICKS_REPO_PATH:-}}
+if [[ -z "${DEST_REPO_PATH}" ]]; then
+  echo "No destination repo path supplied. Exiting; your repo is likely already linked in Databricks Repos. If you want import, pass the path as argument or set DATABRICKS_REPO_PATH secret."
+  exit 0
+fi
 
 # Exit if DATABRICKS_HOST or DATABRICKS_TOKEN not available
 if [[ -z "${DATABRICKS_HOST:-}" || -z "${DATABRICKS_TOKEN:-}" ]]; then

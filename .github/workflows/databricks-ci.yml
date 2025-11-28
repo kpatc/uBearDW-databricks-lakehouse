@@ -46,7 +46,8 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install databricks-cli==0.18.0
-      - name: Import notebooks to Databricks workspace
+      - name: Import notebooks to Databricks workspace (if Repos path provided)
+        if: ${{ secrets.DATABRICKS_REPO_PATH != '' }}
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
@@ -57,5 +58,16 @@ jobs:
         run: |
           pip install great_expectations
           python -c "import great_expectations as gx; print('GE version:', gx.__version__)"
+
+      - name: Optionally trigger a Databricks Job (if JOB_ID provided)
+        if: ${{ secrets.DATABRICKS_JOB_ID != '' }}
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          pip install databricks-cli
+          databricks configure --token <<< "${{ secrets.DATABRICKS_HOST }}\n${{ secrets.DATABRICKS_TOKEN }}\n"
+          echo "Submitting Job ID: ${{ secrets.DATABRICKS_JOB_ID }}"
+          databricks runs submit --json '{"job_id": '${{ secrets.DATABRICKS_JOB_ID }}'}'
 
 # NOTE: For full validation of Great Expectations suites, run suites inside Databricks Job for the notebook '04_data_quality_trip_fact.py'. This CI step only ensures that GE can be imported and the notebooks were deployed.

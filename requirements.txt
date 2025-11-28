@@ -1,0 +1,7 @@
+pyspark==3.4.1
+databricks-cli==0.18.0
+databricks-sdk==0.18.0
+great_expectations==0.16.11
+pytest==7.4.0
+flake8==6.0.0
+nbformat==5.9.0

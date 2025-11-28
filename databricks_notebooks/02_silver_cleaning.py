@@ -41,7 +41,7 @@ payload_schema = StructType() \
     .add("region_partition", StringType()) \
     .add("weather_condition", StringType())
 
-bronze_table = "workspace.default.trip-events_bronze"
+bronze_table = "workspace.default.trip_events_bronze"
 bronze_df = spark.read.format("delta").table(bronze_table)
 
 silver_df = bronze_df.withColumn("payload_json", from_json(col("payload"), payload_schema))
@@ -51,4 +51,4 @@ silver_df = silver_df.drop("payload_json")
 
 silver_df = silver_df.dropDuplicates(["order_id", "event_time"])
 
-silver_df.write.format("delta").mode("overwrite").saveAsTable("workspace.default.trip-events_silver")
+silver_df.write.format("delta").mode("overwrite").saveAsTable("workspace.default.trip_events_silver")

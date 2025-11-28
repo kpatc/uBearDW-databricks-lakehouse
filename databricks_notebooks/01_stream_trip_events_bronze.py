@@ -35,12 +35,13 @@ for topic in topics:
     # Watermark pour gestion du retard
     parsed_df = parsed_df.withWatermark("event_time", "10 minutes")
     
-    # Ecriture dans la table bronze
+    # Ecriture dans la table bronze (remplace '-' par '_' pour noms de table)
+    table_name = topic.replace('-', '_')
     query = (parsed_df.writeStream
         .format("delta")
         .outputMode("append")
-        .option("checkpointLocation", f"/dbfs/tmp/checkpoints/bronze_{topic}")
-        .toTable(f"workspace.default.{topic}_bronze")
+        .option("checkpointLocation", f"/dbfs/tmp/checkpoints/bronze_{table_name}")
+        .toTable(f"workspace.default.{table_name}_bronze")
     )
     
     # Do not await inside the loop; collect queries to wait after starting all of them

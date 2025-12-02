@@ -1,0 +1,36 @@
+{
+  "name": "ubear_bronze_streaming",
+  "storage": "/mnt/datalake/ubear/dlt/bronze",
+  "target": "ubear_bronze",
+  "notebooks": [
+    {
+      "path": "/Repos/ubear-dw/pipelines/bronze_pipeline"
+    }
+  ],
+  "configuration": {
+    "kafka.bootstrap.servers": "kafka:9092",
+    "pipelines.enableTrackHistory": "true"
+  },
+  "clusters": [
+    {
+      "label": "default",
+      "autoscale": {
+        "min_workers": 2,
+        "max_workers": 8,
+        "mode": "ENHANCED"
+      }
+    }
+  ],
+  "development": true,
+  "continuous": true,
+  "channel": "CURRENT",
+  "edition": "ADVANCED",
+  "photon": false,
+  "libraries": [
+    {
+      "notebook": {
+        "path": "/Repos/ubear-dw/utils/transformations"
+      }
+    }
+  ]
+}

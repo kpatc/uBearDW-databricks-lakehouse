@@ -23,11 +23,15 @@ CREATE TABLE IF NOT EXISTS workspace.default.dim_eater (
   default_payment_method STRING,
   average_order_value DECIMAL(12,2),
   customer_segment STRING,
+  address_line_1 STRING,
+  address_line_2 STRING,
+  city STRING,
+  state_province STRING,
+  postal_code STRING,
+  country STRING,
   effective_start_date TIMESTAMP,
   effective_end_date TIMESTAMP,
-  is_current BOOLEAN,
-  version_number INT,
-  row_hash STRING
+  is_current BOOLEAN
 ) USING DELTA;
 
 CREATE TABLE IF NOT EXISTS workspace.default.dim_merchant (
@@ -55,7 +59,6 @@ CREATE TABLE IF NOT EXISTS workspace.default.dim_merchant (
   effective_end_date TIMESTAMP,
   is_current BOOLEAN,
   version_number INT,
-  row_hash STRING
 ) USING DELTA
 PARTITIONED BY (city);
 
@@ -66,12 +69,16 @@ CREATE TABLE IF NOT EXISTS workspace.default.dim_courier (
   last_name STRING,
   vehicle_type STRING,
   license_plate STRING,
-  onboarding_date DATE,
-  primary_delivery_zone STRING,
+  merchant_tier STRING,
+  address_line_1 STRING,
+  address_line_2 STRING,
+  city STRING,
+  state_province STRING,
+  postal_code STRING,
+  country STRING,
   overall_rating DECIMAL(4,2),
   total_deliveries_completed INT,
   acceptance_rate DECIMAL(5,2),
-  cancellation_rate DECIMAL(5,2),
   average_delivery_time_minutes DECIMAL(5,2),
   on_time_delivery_rate DECIMAL(5,2),
   courier_tier STRING,
@@ -84,7 +91,6 @@ CREATE TABLE IF NOT EXISTS workspace.default.dim_courier (
   effective_end_date TIMESTAMP,
   is_current BOOLEAN,
   version_number INT,
-  row_hash STRING
 ) USING DELTA;
 
 CREATE TABLE IF NOT EXISTS workspace.default.dim_location (
@@ -164,8 +170,7 @@ CREATE TABLE IF NOT EXISTS workspace.default.trip_fact (
   delivery_time_minutes INT,
   total_time_minutes INT,
   trip_status STRING,
-  cancellation_reason STRING,
-  is_scheduled_order BOOLEAN,
+  version_number INT,
   is_group_order BOOLEAN,
   promo_code_used STRING,
   discount_amount DECIMAL(12,2),

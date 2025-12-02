@@ -1,0 +1,40 @@
+{
+  "name": "ubear_silver_streaming",
+  "storage": "/mnt/datalake/ubear/dlt/silver",
+  "target": "ubear_silver",
+  "notebooks": [
+    {
+      "path": "/Repos/ubear-dw/pipelines/silver_pipeline"
+    }
+  ],
+  "configuration": {
+    "pipelines.enableTrackHistory": "true"
+  },
+  "clusters": [
+    {
+      "label": "default",
+      "autoscale": {
+        "min_workers": 2,
+        "max_workers": 10,
+        "mode": "ENHANCED"
+      }
+    }
+  ],
+  "development": true,
+  "continuous": true,
+  "channel": "CURRENT",
+  "edition": "ADVANCED",
+  "photon": true,
+  "libraries": [
+    {
+      "notebook": {
+        "path": "/Repos/ubear-dw/utils/transformations"
+      }
+    },
+    {
+      "notebook": {
+        "path": "/Repos/ubear-dw/expectations/data_quality"
+      }
+    }
+  ]
+}

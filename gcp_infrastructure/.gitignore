@@ -1,0 +1,27 @@
+# Ignore Terraform state files
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+
+# Ignore variable files with credentials
+terraform.tfvars
+*.auto.tfvars
+
+# Ignore service account keys
+*.json
+!*.example.json
+
+# Ignore crash logs
+crash.log
+crash.*.log
+
+# Ignore override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ignore CLI configuration
+.terraformrc
+terraform.rc

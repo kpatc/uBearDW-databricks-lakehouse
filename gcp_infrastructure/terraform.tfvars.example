@@ -1,0 +1,15 @@
+# GCP Project ID (OBLIGATOIRE)
+project_id = "your-gcp-project-id"
+
+# Region et Zone - Optimisé pour le Maroc
+# europe-west1 = Belgique (latence ~30-50ms depuis Maroc)
+region = "europe-west1"
+zone   = "europe-west1-b"
+
+# Environment
+environment = "dev"
+
+# Database credentials
+db_user     = "foodapp"
+db_password = "ChangeMeToSecurePassword123!"  # CHANGER EN PRODUCTION
+db_name     = "foodapp"

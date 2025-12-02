@@ -1,0 +1,38 @@
+FROM debezium/connect:2.5
+
+# Install Google Cloud Pub/Sub Kafka Connect Connector
+USER root
+
+# Download and install Pub/Sub Kafka Connector
+RUN cd /kafka/connect && \
+    curl -L https://github.com/googleapis/java-pubsub-group-kafka-connector/releases/download/v1.0.0/pubsub-group-kafka-connector-1.0.0.jar \
+    -o pubsub-group-kafka-connector.jar
+
+# Install Google Cloud SDK (pour authentification)
+RUN apt-get update && \
+    apt-get install -y curl gnupg && \
+    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | \
+    tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
+    curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
+    apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - && \
+    apt-get update && \
+    apt-get install -y google-cloud-cli && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set back to kafka user
+USER kafka
+
+# Environment variables will be injected by Cloud Run
+ENV CONNECT_REST_ADVERTISED_HOST_NAME=debezium-connect
+ENV CONNECT_REST_PORT=8083
+ENV CONNECT_GROUP_ID=ubear-debezium-group
+ENV CONNECT_CONFIG_STORAGE_TOPIC=debezium-configs
+ENV CONNECT_OFFSET_STORAGE_TOPIC=debezium-offsets
+ENV CONNECT_STATUS_STORAGE_TOPIC=debezium-status
+ENV CONNECT_KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+ENV CONNECT_VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+ENV CONNECT_INTERNAL_KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+ENV CONNECT_INTERNAL_VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+
+EXPOSE 8083

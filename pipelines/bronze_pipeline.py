@@ -111,7 +111,8 @@ def read_kafka_topic(topic_name):
     kafka_servers = spark.conf.get("kafka.bootstrap.servers")
     
     # SASL credentials for Confluent Cloud
-    sasl_jaas_config = 'org.apache.kafka.common.security.plain.PlainLoginModule required username="HYPO6LDVPLC2EAYE" password="cfltDnW60V6dsBmYpBFAjnAaQq+lA70I7tim4/XLDCftn0jMqMxAfx4AxdaiC9Iw";'
+    # Using kafka-clients module path for Databricks compatibility
+    sasl_jaas_config = 'kafkashaded.org.apache.kafka.common.security.plain.PlainLoginModule required username="HYPO6LDVPLC2EAYE" password="cfltDnW60V6dsBmYpBFAjnAaQq+lA70I7tim4/XLDCftn0jMqMxAfx4AxdaiC9Iw";'
     
     # Configuration Confluent Cloud SASL_SSL
     # Note: kafka.admin.* options not supported on Databricks Serverless/Shared clusters

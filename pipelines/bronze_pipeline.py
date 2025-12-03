@@ -110,6 +110,9 @@ def read_kafka_topic(topic_name):
     """Lit un topic Kafka et retourne un DataFrame streaming"""
     kafka_servers = spark.conf.get("kafka.bootstrap.servers")
     
+    # SASL credentials for Confluent Cloud
+    sasl_jaas_config = 'org.apache.kafka.common.security.plain.PlainLoginModule required username="HYPO6LDVPLC2EAYE" password="cfltDnW60V6dsBmYpBFAjnAaQq+lA70I7tim4/XLDCftn0jMqMxAfx4AxdaiC9Iw";'
+    
     # Configuration Confluent Cloud SASL_SSL
     return (
         spark.readStream
@@ -118,11 +121,14 @@ def read_kafka_topic(topic_name):
         .option("subscribe", topic_name)
         .option("startingOffsets", "earliest")
         .option("failOnDataLoss", "false")
-        # Confluent Cloud Authentication
+        # Confluent Cloud Authentication (Consumer)
         .option("kafka.security.protocol", "SASL_SSL")
         .option("kafka.sasl.mechanism", "PLAIN")
-        .option("kafka.sasl.jaas.config", 
-                'org.apache.kafka.common.security.plain.PlainLoginModule required username="HYPO6LDVPLC2EAYE" password="cfltDnW60V6dsBmYpBFAjnAaQq+lA70I7tim4/XLDCftn0jMqMxAfx4AxdaiC9Iw";')
+        .option("kafka.sasl.jaas.config", sasl_jaas_config)
+        # Kafka Admin Client Authentication (required for metadata operations)
+        .option("kafka.admin.security.protocol", "SASL_SSL")
+        .option("kafka.admin.sasl.mechanism", "PLAIN")
+        .option("kafka.admin.sasl.jaas.config", sasl_jaas_config)
         .load()
     )
 

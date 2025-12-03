@@ -187,7 +187,7 @@ def eater_bronze():
         col("topic").alias("kafka_topic"),
         col("partition").alias("kafka_partition"),
         col("offset").alias("kafka_offset"),
-        to_timestamp(col("kafka_timestamp") / 1000).alias("kafka_timestamp")
+        col("kafka_timestamp").alias("kafka_timestamp")
     )
     
     return parsed_stream
@@ -244,7 +244,7 @@ def merchant_bronze():
         col("topic").alias("kafka_topic"),
         col("partition").alias("kafka_partition"),
         col("offset").alias("kafka_offset"),
-        to_timestamp(col("kafka_timestamp") / 1000).alias("kafka_timestamp")
+        col("kafka_timestamp").alias("kafka_timestamp")
     )
     
     return parsed_stream
@@ -296,7 +296,7 @@ def courier_bronze():
         col("topic").alias("kafka_topic"),
         col("partition").alias("kafka_partition"),
         col("offset").alias("kafka_offset"),
-        to_timestamp(col("kafka_timestamp") / 1000).alias("kafka_timestamp")
+        col("kafka_timestamp").alias("kafka_timestamp")
     )
     
     return parsed_stream
@@ -346,7 +346,7 @@ def trip_events_bronze():
         col("topic").alias("kafka_topic"),
         col("partition").alias("kafka_partition"),
         col("offset").alias("kafka_offset"),
-        to_timestamp(col("kafka_timestamp") / 1000).alias("kafka_timestamp")
+        col("kafka_timestamp").alias("kafka_timestamp")
     )
     
     return parsed_stream

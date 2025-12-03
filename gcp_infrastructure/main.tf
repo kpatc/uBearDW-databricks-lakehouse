@@ -1,6 +1,6 @@
 /**
  * Infrastructure Terraform pour uBear Data Warehouse sur GCP
- * Architecture: Cloud SQL + Pub/Sub + Cloud Run (Debezium)
+ * Architecture: Cloud SQL + Kafka + Debezium (Cloud Run) + Databricks
  */
 
 terraform {
@@ -139,161 +139,14 @@ resource "google_sql_user" "ubear_user" {
 # Pub/Sub Topics pour CDC
 # =============================================================================
 
-resource "google_pubsub_topic" "eater_cdc" {
-  name = "ubear-eater-cdc"
-
-  message_retention_duration = "3600s" # 1 heure (au lieu de 1 jour) - économique
-  
-  labels = {
-    environment = var.environment
-    project     = "ubear-dw"
-    source      = "debezium"
-  }
-}
-
-resource "google_pubsub_topic" "merchant_cdc" {
-  name = "ubear-merchant-cdc"
-
-  message_retention_duration = "3600s" # 1 heure - économique
-  
-  labels = {
-    environment = var.environment
-    project     = "ubear-dw"
-    source      = "debezium"
-  }
-}
-
-resource "google_pubsub_topic" "courier_cdc" {
-  name = "ubear-courier-cdc"
-
-  message_retention_duration = "3600s" # 1 heure - économique
-  
-  labels = {
-    environment = var.environment
-    project     = "ubear-dw"
-    source      = "debezium"
-  }
-}
-
-resource "google_pubsub_topic" "trip_events_cdc" {
-  name = "ubear-trip-events-cdc"
-
-  message_retention_duration = "3600s" # 1 heure - économique
-  
-  labels = {
-    environment = var.environment
-    project     = "ubear-dw"
-    source      = "debezium"
-  }
-}
-
-resource "google_pubsub_topic" "schema_changes" {
-  name = "ubear-schema-changes"
-
-  message_retention_duration = "3600s" # 1 heure - économique
-  
-  labels = {
-    environment = var.environment
-    project     = "ubear-dw"
-    source      = "debezium"
-  }
-}
-
 # =============================================================================
-# Pub/Sub Subscriptions pour Databricks
-# =============================================================================
-
-resource "google_pubsub_subscription" "eater_sub" {
-  name  = "ubear-eater-sub"
-  topic = google_pubsub_topic.eater_cdc.name
-
-  ack_deadline_seconds = 60
-  message_retention_duration = "3600s" # 1 heure - économique
-
-  expiration_policy {
-    ttl = "" # Never expire
-  }
-
-  retry_policy {
-    minimum_backoff = "10s"
-    maximum_backoff = "300s" # Réduit de 600s
-  }
-}
-
-resource "google_pubsub_subscription" "merchant_sub" {
-  name  = "ubear-merchant-sub"
-  topic = google_pubsub_topic.merchant_cdc.name
-
-  ack_deadline_seconds = 60
-  message_retention_duration = "3600s" # 1 heure - économique
-
-  expiration_policy {
-    ttl = ""
-  }
-
-  retry_policy {
-    minimum_backoff = "10s"
-    maximum_backoff = "300s" # Réduit
-  }
-}
-
-resource "google_pubsub_subscription" "courier_sub" {
-  name  = "ubear-courier-sub"
-  topic = google_pubsub_topic.courier_cdc.name
-
-  ack_deadline_seconds = 60
-  message_retention_duration = "3600s" # 1 heure - économique
-
-  expiration_policy {
-    ttl = ""
-  }
-
-  retry_policy {
-    minimum_backoff = "10s"
-    maximum_backoff = "300s" # Réduit
-  }
-}
-
-resource "google_pubsub_subscription" "trip_events_sub" {
-  name  = "ubear-trip-events-sub"
-  topic = google_pubsub_topic.trip_events_cdc.name
-
-  ack_deadline_seconds = 60
-  message_retention_duration = "3600s" # 1 heure - économique
-
-  expiration_policy {
-    ttl = ""
-  }
-
-  retry_policy {
-    minimum_backoff = "10s"
-    maximum_backoff = "300s" # Réduit
-  }
-}
-
-# =============================================================================
-# Service Account pour Debezium
+# Service Account pour Debezium (connexion Cloud SQL uniquement)
 # =============================================================================
 
 resource "google_service_account" "debezium_sa" {
   account_id   = "debezium-connector"
   display_name = "Debezium CDC Connector Service Account"
-  description  = "Service account for Debezium to publish CDC events to Pub/Sub"
-}
-
-# IAM: Pub/Sub Publisher
-resource "google_pubsub_topic_iam_member" "debezium_publisher" {
-  for_each = toset([
-    google_pubsub_topic.eater_cdc.name,
-    google_pubsub_topic.merchant_cdc.name,
-    google_pubsub_topic.courier_cdc.name,
-    google_pubsub_topic.trip_events_cdc.name,
-    google_pubsub_topic.schema_changes.name
-  ])
-
-  topic  = each.key
-  role   = "roles/pubsub.publisher"
-  member = "serviceAccount:${google_service_account.debezium_sa.email}"
+  description  = "Service account for Debezium to connect to Cloud SQL"
 }
 
 # IAM: Cloud SQL Client
@@ -301,37 +154,6 @@ resource "google_project_iam_member" "debezium_sql_client" {
   project = var.project_id
   role    = "roles/cloudsql.client"
   member  = "serviceAccount:${google_service_account.debezium_sa.email}"
-}
-
-# =============================================================================
-# Service Account pour Databricks
-# =============================================================================
-
-resource "google_service_account" "databricks_sa" {
-  account_id   = "databricks-pubsub-reader"
-  display_name = "Databricks Pub/Sub Reader"
-  description  = "Service account for Databricks to read from Pub/Sub subscriptions"
-}
-
-# IAM: Pub/Sub Subscriber
-resource "google_pubsub_subscription_iam_member" "databricks_subscriber" {
-  for_each = toset([
-    google_pubsub_subscription.eater_sub.name,
-    google_pubsub_subscription.merchant_sub.name,
-    google_pubsub_subscription.courier_sub.name,
-    google_pubsub_subscription.trip_events_sub.name
-  ])
-
-  subscription = each.key
-  role         = "roles/pubsub.subscriber"
-  member       = "serviceAccount:${google_service_account.databricks_sa.email}"
-}
-
-# IAM: Pub/Sub Viewer (pour lister topics)
-resource "google_project_iam_member" "databricks_viewer" {
-  project = var.project_id
-  role    = "roles/pubsub.viewer"
-  member  = "serviceAccount:${google_service_account.databricks_sa.email}"
 }
 
 # =============================================================================
@@ -348,35 +170,9 @@ output "cloud_sql_public_ip" {
   value       = google_sql_database_instance.ubear_postgres.public_ip_address
 }
 
-output "pubsub_topics" {
-  description = "Pub/Sub topics for CDC"
-  value = {
-    eater       = google_pubsub_topic.eater_cdc.name
-    merchant    = google_pubsub_topic.merchant_cdc.name
-    courier     = google_pubsub_topic.courier_cdc.name
-    trip_events = google_pubsub_topic.trip_events_cdc.name
-    schema      = google_pubsub_topic.schema_changes.name
-  }
-}
-
-output "pubsub_subscriptions" {
-  description = "Pub/Sub subscriptions for Databricks"
-  value = {
-    eater       = google_pubsub_subscription.eater_sub.name
-    merchant    = google_pubsub_subscription.merchant_sub.name
-    courier     = google_pubsub_subscription.courier_sub.name
-    trip_events = google_pubsub_subscription.trip_events_sub.name
-  }
-}
-
 output "debezium_service_account" {
   description = "Debezium service account email"
   value       = google_service_account.debezium_sa.email
-}
-
-output "databricks_service_account" {
-  description = "Databricks service account email"
-  value       = google_service_account.databricks_sa.email
 }
 
 output "connection_string" {

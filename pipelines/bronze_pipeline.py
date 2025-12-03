@@ -1,25 +1,12 @@
 """
-Bronze Pipeline pour Databricks avec Google Cloud Pub/Sub
-Pattern simplifié sans fichier DBFS - Compatible avec Free Trial
-Basé sur le pattern Kinesis streaming
+Bronze Pipeline pour Databricks avec Apache Kafka
+Compatible avec Databricks Serverless
+CDC ingestion depuis Debezium Server
 """
 
 import dlt
-from pyspark.sql.functions import from_json, col, struct, to_timestamp
+from pyspark.sql.functions import from_json, col, struct, to_timestamp, cast
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, BooleanType, LongType
-
-# =============================================================================
-# Configuration Pub/Sub (via pipeline parameters)
-# =============================================================================
-
-# Ces valeurs seront passées via les paramètres du pipeline DLT
-GCP_PROJECT_ID = spark.conf.get("gcp.project.id", "gentle-voltage-478517-q0")
-
-# Configuration Pub/Sub pour chaque subscription
-pubsub_base_config = {
-    "projectId": GCP_PROJECT_ID,
-    "credentialsJson": spark.conf.get("gcp.credentials.json", "")  # Passé en paramètre
-}
 
 # =============================================================================
 # Schemas Debezium CDC
@@ -59,7 +46,7 @@ merchant_payload_schema = StructType([
     StructField("state_province", StringType(), True),
     StructField("postal_code", StringType(), True),
     StructField("country", StringType(), True),
-    StructField("operating_hours", StringType(), True),  # JSON as string
+    StructField("operating_hours", StringType(), True),
     StructField("is_active", BooleanType(), True),
     StructField("created_at", LongType(), True),
     StructField("updated_at", LongType(), True)
@@ -75,257 +62,291 @@ courier_payload_schema = StructType([
     StructField("vehicle_type", StringType(), True),
     StructField("license_plate", StringType(), True),
     StructField("is_active", BooleanType(), True),
-    StructField("onboarding_date", StringType(), True),  # Date as string
+    StructField("onboarding_date", StringType(), True),
     StructField("created_at", LongType(), True),
     StructField("updated_at", LongType(), True)
 ])
 
 trip_events_payload_schema = StructType([
     StructField("event_id", IntegerType(), True),
-    StructField("trip_id", StringType(), True),
-    StructField("order_id", StringType(), True),
-    StructField("eater_id", IntegerType(), True),
-    StructField("merchant_id", IntegerType(), True),
-    StructField("courier_id", IntegerType(), True),
+    StructField("trip_id", IntegerType(), True),
     StructField("event_type", StringType(), True),
-    StructField("event_time", StringType(), True),  # Timestamp as string
-    StructField("payload", StringType(), True),  # JSONB as string
+    StructField("event_timestamp", LongType(), True),
+    StructField("latitude", StringType(), True),
+    StructField("longitude", StringType(), True),
+    StructField("actor_type", StringType(), True),
+    StructField("actor_id", IntegerType(), True),
+    StructField("event_details", StringType(), True),
     StructField("created_at", LongType(), True)
 ])
 
+# Schema Debezium envelope complet
+debezium_envelope_schema = StructType([
+    StructField("payload", StructType([
+        StructField("before", StringType(), True),  # Peut être n'importe quel schema
+        StructField("after", StringType(), True),
+        StructField("source", StructType([
+            StructField("version", StringType(), True),
+            StructField("connector", StringType(), True),
+            StructField("name", StringType(), True),
+            StructField("ts_ms", LongType(), True),
+            StructField("snapshot", StringType(), True),
+            StructField("db", StringType(), True),
+            StructField("schema", StringType(), True),
+            StructField("table", StringType(), True),
+            StructField("txId", LongType(), True),
+            StructField("lsn", LongType(), True)
+        ]), True),
+        StructField("op", StringType(), True),
+        StructField("ts_ms", LongType(), True)
+    ]), True)
+])
+
 # =============================================================================
-# Tables Bronze - Pattern Kinesis-like
+# Helper function pour lire depuis Kafka
+# =============================================================================
+
+def read_kafka_topic(topic_name):
+    """Lit un topic Kafka et retourne un DataFrame streaming"""
+    kafka_servers = spark.conf.get("kafka.bootstrap.servers")
+    
+    # Configuration Confluent Cloud SASL_SSL
+    return (
+        spark.readStream
+        .format("kafka")
+        .option("kafka.bootstrap.servers", kafka_servers)
+        .option("subscribe", topic_name)
+        .option("startingOffsets", "earliest")
+        .option("failOnDataLoss", "false")
+        # Confluent Cloud Authentication
+        .option("kafka.security.protocol", "SASL_SSL")
+        .option("kafka.sasl.mechanism", "PLAIN")
+        .option("kafka.sasl.jaas.config", 
+                'org.apache.kafka.common.security.plain.PlainLoginModule required username="HYPO6LDVPLC2EAYE" password="cfltDnW60V6dsBmYpBFAjnAaQq+lA70I7tim4/XLDCftn0jMqMxAfx4AxdaiC9Iw";')
+        .load()
+    )
+
+# =============================================================================
+# Bronze Tables - CDC Ingestion
 # =============================================================================
 
 @dlt.table(
     name="eater_bronze",
-    comment="Raw CDC data for eaters from Pub/Sub",
+    comment="Raw CDC data for eaters from Kafka",
     table_properties={"quality": "bronze", "pipelines.autoOptimize.zOrderCols": "eater_id"}
 )
 def eater_bronze():
-    """Ingestion streaming depuis Pub/Sub subscription ubear-eater-sub"""
+    """Ingestion streaming depuis Kafka topic ubear.public.eater"""
     
-    # Configuration spécifique pour eater
-    config = pubsub_base_config.copy()
-    config["subscriptionId"] = "ubear-eater-sub"
+    raw_stream = read_kafka_topic("ubear.public.eater")
     
-    # Read stream depuis Pub/Sub
-    raw_stream = (
-        spark.readStream
-        .format("pubsub")
-        .options(**config)
-        .load()
-    )
-    
-    # Parser le message Debezium CDC
+    # Parser le message Kafka
     parsed_stream = raw_stream.selectExpr(
-        "CAST(data AS STRING) AS raw_json",
-        "messageId",
-        "publishTime",
-        "attributes"
+        "CAST(key AS STRING) AS kafka_key",
+        "CAST(value AS STRING) AS raw_json",
+        "topic",
+        "partition",
+        "offset",
+        "timestamp AS kafka_timestamp"
     ).withColumn(
         # Parser le JSON Debezium envelope
         "payload_parsed",
-        from_json(col("raw_json"), StructType([
-            StructField("payload", StructType([
-                StructField("before", eater_payload_schema, True),
-                StructField("after", eater_payload_schema, True),
-                StructField("source", StructType([
-                    StructField("version", StringType(), True),
-                    StructField("connector", StringType(), True),
-                    StructField("name", StringType(), True),
-                    StructField("ts_ms", LongType(), True),
-                    StructField("snapshot", StringType(), True),
-                    StructField("db", StringType(), True),
-                    StructField("schema", StringType(), True),
-                    StructField("table", StringType(), True),
-                    StructField("txId", LongType(), True),
-                    StructField("lsn", LongType(), True)
-                ]), True),
-                StructField("op", StringType(), True),
-                StructField("ts_ms", LongType(), True)
-            ]), True)
-        ]))
+        from_json(col("raw_json"), debezium_envelope_schema)
     ).withColumn(
-        # Metadata Pub/Sub
-        "pubsub_metadata",
-        struct(
-            col("messageId"),
-            col("publishTime"),
-            col("attributes")
-        )
-    )
-    
-    # Sélectionner les colonnes finales (on prend "after" pour INSERT/UPDATE)
-    return parsed_stream.select(
-        col("payload_parsed.payload.after.*"),
+        # Extraire le payload "after" (les données)
+        "after_parsed",
+        from_json(col("payload_parsed.payload.after"), eater_payload_schema)
+    ).select(
+        # Données principales (after state)
+        col("after_parsed.eater_id").alias("eater_id"),
+        col("after_parsed.eater_uuid").alias("eater_uuid"),
+        col("after_parsed.first_name").alias("first_name"),
+        col("after_parsed.last_name").alias("last_name"),
+        col("after_parsed.email").alias("email"),
+        col("after_parsed.phone_number").alias("phone_number"),
+        col("after_parsed.address_line_1").alias("address_line_1"),
+        col("after_parsed.address_line_2").alias("address_line_2"),
+        col("after_parsed.city").alias("city"),
+        col("after_parsed.state_province").alias("state_province"),
+        col("after_parsed.postal_code").alias("postal_code"),
+        col("after_parsed.country").alias("country"),
+        col("after_parsed.default_payment_method").alias("default_payment_method"),
+        col("after_parsed.is_active").alias("is_active"),
+        
+        # Timestamps
+        to_timestamp(col("after_parsed.created_at") / 1000).alias("created_at"),
+        to_timestamp(col("after_parsed.updated_at") / 1000).alias("updated_at"),
+        
+        # CDC metadata
         col("payload_parsed.payload.op").alias("cdc_operation"),
         to_timestamp(col("payload_parsed.payload.ts_ms") / 1000).alias("cdc_timestamp"),
-        col("payload_parsed.payload.source.lsn").alias("cdc_lsn"),
-        col("pubsub_metadata")
+        col("payload_parsed.payload.source.snapshot").alias("cdc_snapshot"),
+        
+        # Kafka metadata
+        col("kafka_key").alias("kafka_key"),
+        col("topic").alias("kafka_topic"),
+        col("partition").alias("kafka_partition"),
+        col("offset").alias("kafka_offset"),
+        to_timestamp(col("kafka_timestamp") / 1000).alias("kafka_timestamp")
     )
+    
+    return parsed_stream
 
 
 @dlt.table(
     name="merchant_bronze",
-    comment="Raw CDC data for merchants from Pub/Sub",
+    comment="Raw CDC data for merchants from Kafka",
     table_properties={"quality": "bronze", "pipelines.autoOptimize.zOrderCols": "merchant_id"}
 )
 def merchant_bronze():
-    """Ingestion streaming depuis Pub/Sub subscription ubear-merchant-sub"""
+    """Ingestion streaming depuis Kafka topic ubear.public.merchant"""
     
-    config = pubsub_base_config.copy()
-    config["subscriptionId"] = "ubear-merchant-sub"
-    
-    raw_stream = (
-        spark.readStream
-        .format("pubsub")
-        .options(**config)
-        .load()
-    )
+    raw_stream = read_kafka_topic("ubear.public.merchant")
     
     parsed_stream = raw_stream.selectExpr(
-        "CAST(data AS STRING) AS raw_json",
-        "messageId",
-        "publishTime",
-        "attributes"
+        "CAST(key AS STRING) AS kafka_key",
+        "CAST(value AS STRING) AS raw_json",
+        "topic",
+        "partition",
+        "offset",
+        "timestamp AS kafka_timestamp"
     ).withColumn(
         "payload_parsed",
-        from_json(col("raw_json"), StructType([
-            StructField("payload", StructType([
-                StructField("before", merchant_payload_schema, True),
-                StructField("after", merchant_payload_schema, True),
-                StructField("source", StructType([
-                    StructField("version", StringType(), True),
-                    StructField("ts_ms", LongType(), True),
-                    StructField("snapshot", StringType(), True),
-                    StructField("db", StringType(), True),
-                    StructField("table", StringType(), True)
-                ]), True),
-                StructField("op", StringType(), True),
-                StructField("ts_ms", LongType(), True)
-            ]), True)
-        ]))
+        from_json(col("raw_json"), debezium_envelope_schema)
     ).withColumn(
-        "pubsub_metadata",
-        struct(
-            col("messageId"),
-            col("publishTime"),
-            col("attributes")
-        )
-    )
-    
-    return parsed_stream.select(
-        col("payload_parsed.payload.after.*"),
+        "after_parsed",
+        from_json(col("payload_parsed.payload.after"), merchant_payload_schema)
+    ).select(
+        col("after_parsed.merchant_id").alias("merchant_id"),
+        col("after_parsed.merchant_uuid").alias("merchant_uuid"),
+        col("after_parsed.name").alias("name"),
+        col("after_parsed.email").alias("email"),
+        col("after_parsed.phone_number").alias("phone_number"),
+        col("after_parsed.business_type").alias("business_type"),
+        col("after_parsed.cuisine_type").alias("cuisine_type"),
+        col("after_parsed.address_line_1").alias("address_line_1"),
+        col("after_parsed.address_line_2").alias("address_line_2"),
+        col("after_parsed.city").alias("city"),
+        col("after_parsed.state_province").alias("state_province"),
+        col("after_parsed.postal_code").alias("postal_code"),
+        col("after_parsed.country").alias("country"),
+        col("after_parsed.operating_hours").alias("operating_hours"),
+        col("after_parsed.is_active").alias("is_active"),
+        
+        to_timestamp(col("after_parsed.created_at") / 1000).alias("created_at"),
+        to_timestamp(col("after_parsed.updated_at") / 1000).alias("updated_at"),
+        
         col("payload_parsed.payload.op").alias("cdc_operation"),
         to_timestamp(col("payload_parsed.payload.ts_ms") / 1000).alias("cdc_timestamp"),
-        col("pubsub_metadata")
+        col("payload_parsed.payload.source.snapshot").alias("cdc_snapshot"),
+        
+        col("kafka_key").alias("kafka_key"),
+        col("topic").alias("kafka_topic"),
+        col("partition").alias("kafka_partition"),
+        col("offset").alias("kafka_offset"),
+        to_timestamp(col("kafka_timestamp") / 1000).alias("kafka_timestamp")
     )
+    
+    return parsed_stream
 
 
 @dlt.table(
     name="courier_bronze",
-    comment="Raw CDC data for couriers from Pub/Sub",
+    comment="Raw CDC data for couriers from Kafka",
     table_properties={"quality": "bronze", "pipelines.autoOptimize.zOrderCols": "courier_id"}
 )
 def courier_bronze():
-    """Ingestion streaming depuis Pub/Sub subscription ubear-courier-sub"""
+    """Ingestion streaming depuis Kafka topic ubear.public.courier"""
     
-    config = pubsub_base_config.copy()
-    config["subscriptionId"] = "ubear-courier-sub"
-    
-    raw_stream = (
-        spark.readStream
-        .format("pubsub")
-        .options(**config)
-        .load()
-    )
+    raw_stream = read_kafka_topic("ubear.public.courier")
     
     parsed_stream = raw_stream.selectExpr(
-        "CAST(data AS STRING) AS raw_json",
-        "messageId",
-        "publishTime",
-        "attributes"
+        "CAST(key AS STRING) AS kafka_key",
+        "CAST(value AS STRING) AS raw_json",
+        "topic",
+        "partition",
+        "offset",
+        "timestamp AS kafka_timestamp"
     ).withColumn(
         "payload_parsed",
-        from_json(col("raw_json"), StructType([
-            StructField("payload", StructType([
-                StructField("before", courier_payload_schema, True),
-                StructField("after", courier_payload_schema, True),
-                StructField("source", StructType([
-                    StructField("ts_ms", LongType(), True),
-                    StructField("table", StringType(), True)
-                ]), True),
-                StructField("op", StringType(), True),
-                StructField("ts_ms", LongType(), True)
-            ]), True)
-        ]))
+        from_json(col("raw_json"), debezium_envelope_schema)
     ).withColumn(
-        "pubsub_metadata",
-        struct(
-            col("messageId"),
-            col("publishTime"),
-            col("attributes")
-        )
-    )
-    
-    return parsed_stream.select(
-        col("payload_parsed.payload.after.*"),
+        "after_parsed",
+        from_json(col("payload_parsed.payload.after"), courier_payload_schema)
+    ).select(
+        col("after_parsed.courier_id").alias("courier_id"),
+        col("after_parsed.courier_uuid").alias("courier_uuid"),
+        col("after_parsed.first_name").alias("first_name"),
+        col("after_parsed.last_name").alias("last_name"),
+        col("after_parsed.email").alias("email"),
+        col("after_parsed.phone_number").alias("phone_number"),
+        col("after_parsed.vehicle_type").alias("vehicle_type"),
+        col("after_parsed.license_plate").alias("license_plate"),
+        col("after_parsed.is_active").alias("is_active"),
+        col("after_parsed.onboarding_date").cast("date").alias("onboarding_date"),
+        
+        to_timestamp(col("after_parsed.created_at") / 1000).alias("created_at"),
+        to_timestamp(col("after_parsed.updated_at") / 1000).alias("updated_at"),
+        
         col("payload_parsed.payload.op").alias("cdc_operation"),
         to_timestamp(col("payload_parsed.payload.ts_ms") / 1000).alias("cdc_timestamp"),
-        col("pubsub_metadata")
+        col("payload_parsed.payload.source.snapshot").alias("cdc_snapshot"),
+        
+        col("kafka_key").alias("kafka_key"),
+        col("topic").alias("kafka_topic"),
+        col("partition").alias("kafka_partition"),
+        col("offset").alias("kafka_offset"),
+        to_timestamp(col("kafka_timestamp") / 1000).alias("kafka_timestamp")
     )
+    
+    return parsed_stream
 
 
 @dlt.table(
     name="trip_events_bronze",
-    comment="Raw CDC data for trip events from Pub/Sub",
-    table_properties={"quality": "bronze", "pipelines.autoOptimize.zOrderCols": "trip_id,event_id"}
+    comment="Raw CDC data for trip events from Kafka",
+    table_properties={"quality": "bronze", "pipelines.autoOptimize.zOrderCols": "event_id,trip_id"}
 )
 def trip_events_bronze():
-    """Ingestion streaming depuis Pub/Sub subscription ubear-trip-events-sub"""
+    """Ingestion streaming depuis Kafka topic ubear.public.trip_events"""
     
-    config = pubsub_base_config.copy()
-    config["subscriptionId"] = "ubear-trip-events-sub"
-    
-    raw_stream = (
-        spark.readStream
-        .format("pubsub")
-        .options(**config)
-        .load()
-    )
+    raw_stream = read_kafka_topic("ubear.public.trip_events")
     
     parsed_stream = raw_stream.selectExpr(
-        "CAST(data AS STRING) AS raw_json",
-        "messageId",
-        "publishTime",
-        "attributes"
+        "CAST(key AS STRING) AS kafka_key",
+        "CAST(value AS STRING) AS raw_json",
+        "topic",
+        "partition",
+        "offset",
+        "timestamp AS kafka_timestamp"
     ).withColumn(
         "payload_parsed",
-        from_json(col("raw_json"), StructType([
-            StructField("payload", StructType([
-                StructField("before", trip_events_payload_schema, True),
-                StructField("after", trip_events_payload_schema, True),
-                StructField("source", StructType([
-                    StructField("ts_ms", LongType(), True),
-                    StructField("table", StringType(), True)
-                ]), True),
-                StructField("op", StringType(), True),
-                StructField("ts_ms", LongType(), True)
-            ]), True)
-        ]))
+        from_json(col("raw_json"), debezium_envelope_schema)
     ).withColumn(
-        "pubsub_metadata",
-        struct(
-            col("messageId"),
-            col("publishTime"),
-            col("attributes")
-        )
-    )
-    
-    return parsed_stream.select(
-        col("payload_parsed.payload.after.*"),
+        "after_parsed",
+        from_json(col("payload_parsed.payload.after"), trip_events_payload_schema)
+    ).select(
+        col("after_parsed.event_id").alias("event_id"),
+        col("after_parsed.trip_id").alias("trip_id"),
+        col("after_parsed.event_type").alias("event_type"),
+        to_timestamp(col("after_parsed.event_timestamp") / 1000).alias("event_timestamp"),
+        col("after_parsed.latitude").cast("decimal(10,7)").alias("latitude"),
+        col("after_parsed.longitude").cast("decimal(10,7)").alias("longitude"),
+        col("after_parsed.actor_type").alias("actor_type"),
+        col("after_parsed.actor_id").alias("actor_id"),
+        col("after_parsed.event_details").alias("event_details"),
+        
+        to_timestamp(col("after_parsed.created_at") / 1000).alias("created_at"),
+        
         col("payload_parsed.payload.op").alias("cdc_operation"),
         to_timestamp(col("payload_parsed.payload.ts_ms") / 1000).alias("cdc_timestamp"),
-        col("pubsub_metadata")
+        col("payload_parsed.payload.source.snapshot").alias("cdc_snapshot"),
+        
+        col("kafka_key").alias("kafka_key"),
+        col("topic").alias("kafka_topic"),
+        col("partition").alias("kafka_partition"),
+        col("offset").alias("kafka_offset"),
+        to_timestamp(col("kafka_timestamp") / 1000).alias("kafka_timestamp")
     )
+    
+    return parsed_stream

@@ -40,22 +40,22 @@ gcloud secrets add-iam-policy-binding debezium-sa-key \
     --role="roles/secretmanager.secretAccessor" \
     --project=${PROJECT_ID}
 
-# Étape 3 : Déployer sur Cloud Run
+# Étape 3 : Déployer sur Cloud Run avec Confluent Cloud
 echo ""
-echo "🚀 [3/5] Déploiement sur Cloud Run..."
+echo "🚀 [3/5] Déploiement sur Cloud Run (Confluent Cloud)..."
 gcloud run deploy ${SERVICE_NAME} \
     --image ${IMAGE_NAME} \
     --platform managed \
     --region ${REGION} \
     --service-account ${SERVICE_ACCOUNT} \
     --no-allow-unauthenticated \
-    --memory 1Gi \
-    --cpu 1 \
+    --memory 2Gi \
+    --cpu 2 \
     --timeout 3600 \
     --max-instances 1 \
     --min-instances 1 \
-    --set-secrets="/debezium/secrets/debezium-sa-key.json=debezium-sa-key:latest" \
-    --set-env-vars="GOOGLE_APPLICATION_CREDENTIALS=/debezium/secrets/debezium-sa-key.json" \
+    --cpu-throttling \
+    --add-cloudsql-instances=gentle-voltage-478517-q0:europe-west1:ubear-postgres-dev \
     --project=${PROJECT_ID}
 
 # Étape 4 : Vérifier le déploiement
@@ -81,7 +81,8 @@ echo "=================================="
 echo ""
 echo "Service URL: ${SERVICE_URL}"
 echo "Service Account: ${SERVICE_ACCOUNT}"
-echo "Pub/Sub Topics: ubear-eater-cdc, ubear-merchant-cdc, ubear-courier-cdc, ubear-trip-events-cdc"
+echo "Confluent Kafka: pkc-z1o60.europe-west1.gcp.confluent.cloud:9092"
+echo "Kafka Topics: ubear.public.eater, ubear.public.merchant, ubear.public.courier, ubear.public.trip_events"
 echo ""
 echo "Pour surveiller les logs :"
 echo "gcloud run services logs tail ${SERVICE_NAME} --region ${REGION} --project ${PROJECT_ID}"

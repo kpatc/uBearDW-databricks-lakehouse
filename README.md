@@ -21,27 +21,27 @@ This project implements an end-to-end data warehouse solution that centralizes a
 
 ### Data Sources
 
-All source data originates from **Google Cloud SQL PostgreSQL** and flows through a fully managed CDC pipeline:
+All source data originates from **Google Cloud SQL PostgreSQL** and flows through a real-time CDC pipeline:
 
 | Component | Technology | Description |
 |-----------|-----------|-------------|
 | **Transactional DB** | Cloud SQL PostgreSQL 15 | Source database with 4 tables (eater, merchant, courier, trip_events) |
 | **CDC Capture** | Debezium Server 2.5 | Deployed on Cloud Run, captures changes via pgoutput plugin |
-| **Event Streaming** | Google Pub/Sub | 5 topics with subscriptions for reliable message delivery |
-| **Data Processing** | Databricks DLT | Bronze → Silver → Gold transformations |
+| **Event Streaming** | Apache Kafka (KRaft) | Self-hosted on Compute Engine e2-small for reliable message delivery |
+| **Data Processing** | Databricks DLT Serverless | Bronze → Silver → Gold transformations |
 
 **CDC Flow:**
 ```
-Cloud SQL WAL → Debezium (pgoutput) → Pub/Sub Topics → DLT Streaming → Delta Tables
+Cloud SQL WAL → Debezium (pgoutput) → Kafka Topics → DLT Streaming → Delta Tables
 ```
 
 ## 📐 Architecture
 
 ### Data Flow
 ```
-Cloud SQL PostgreSQL → Debezium Server → Pub/Sub → Databricks DLT
-                                                        ↓
-                                    Bronze (Raw CDC) → Silver (Cleaned) → Gold (Analytics)
+Cloud SQL PostgreSQL → Debezium Server → Kafka Broker → Databricks DLT Serverless
+                                                              ↓
+                                      Bronze (Raw CDC) → Silver (Cleaned) → Gold (Analytics)
 ```
 
 ### Technology Stack
@@ -49,8 +49,8 @@ Cloud SQL PostgreSQL → Debezium Server → Pub/Sub → Databricks DLT
 |-------|-----------|---------|
 | **Source** | Cloud SQL PostgreSQL | Transactional database |
 | **CDC** | Debezium Server 2.5 | Change data capture |
-| **Messaging** | Google Pub/Sub | Event streaming |
-| **Processing** | Databricks (Delta Live Tables) | ETL pipelines |
+| **Messaging** | Apache Kafka KRaft | Event streaming (4 topics) |
+| **Processing** | Databricks Serverless DLT | ETL pipelines |
 | **Storage** | Delta Lake | ACID-compliant data lake |
 | **Orchestration** | Databricks Workflows | Job scheduling |
 | **IaC** | Terraform | Infrastructure automation |
@@ -59,11 +59,12 @@ Cloud SQL PostgreSQL → Debezium Server → Pub/Sub → Databricks DLT
 
 ```
 ├── pipelines/                    # DLT pipeline definitions
-│   ├── bronze_pipeline.py        # Raw CDC ingestion from Pub/Sub
+│   ├── bronze_pipeline.py        # Raw CDC ingestion from Kafka
 │   ├── silver_pipeline.py        # Data cleaning & validation
 │   └── gold_pipeline.py          # Business aggregations & dimensions
 ├── gcp_infrastructure/           # Google Cloud setup
-│   ├── main.tf                   # Terraform infrastructure
+│   ├── main.tf                   # Terraform infrastructure (Cloud SQL)
+│   ├── kafka.tf                  # Kafka broker on Compute Engine
 │   ├── init_cloud_sql.sql        # Database initialization
 │   ├── debezium-server/          # CDC configuration
 │   │   ├── application.properties

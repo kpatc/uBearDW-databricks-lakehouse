@@ -4,36 +4,26 @@
   "target": "ubear_silver",
   "notebooks": [
     {
-      "path": "/Repos/ubear-dw/pipelines/silver_pipeline"
+      "path": "/Repos/uBearDW-databricks-lakehouse/pipelines/silver_pipeline"
     }
   ],
   "configuration": {
     "pipelines.enableTrackHistory": "true"
   },
-  "clusters": [
-    {
-      "label": "default",
-      "autoscale": {
-        "min_workers": 2,
-        "max_workers": 10,
-        "mode": "ENHANCED"
-      }
-    }
-  ],
-  "development": true,
+  "development": false,
   "continuous": true,
   "channel": "CURRENT",
-  "edition": "ADVANCED",
-  "photon": true,
+  "edition": "CORE",
+  "serverless": true,
   "libraries": [
     {
       "notebook": {
-        "path": "/Repos/ubear-dw/utils/transformations"
+        "path": "/Repos/uBearDW-databricks-lakehouse/utils/transformations"
       }
     },
     {
       "notebook": {
-        "path": "/Repos/ubear-dw/expectations/data_quality"
+        "path": "/Repos/uBearDW-databricks-lakehouse/expectations/data_quality"
       }
     }
   ]

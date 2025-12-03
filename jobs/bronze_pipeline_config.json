@@ -1,36 +1,28 @@
 {
-  "name": "ubear_bronze_streaming",
+  "name": "ubear_bronze_cdc_streaming",
   "storage": "/mnt/datalake/ubear/dlt/bronze",
   "target": "ubear_bronze",
-  "notebooks": [
-    {
-      "path": "/Repos/ubear-dw/pipelines/bronze_pipeline"
-    }
-  ],
   "configuration": {
-    "kafka.bootstrap.servers": "kafka:9092",
+    "kafka.bootstrap.servers": "pkc-z1o60.europe-west1.gcp.confluent.cloud:9092",
     "pipelines.enableTrackHistory": "true"
   },
   "clusters": [
     {
       "label": "default",
-      "autoscale": {
-        "min_workers": 2,
-        "max_workers": 8,
-        "mode": "ENHANCED"
+      "spark_conf": {
+        "spark.databricks.delta.optimizeWrite.enabled": "true",
+        "spark.databricks.delta.autoCompact.enabled": "true"
       }
     }
   ],
-  "development": true,
-  "continuous": true,
-  "channel": "CURRENT",
-  "edition": "ADVANCED",
-  "photon": false,
-  "libraries": [
+  "notebooks": [
     {
-      "notebook": {
-        "path": "/Repos/ubear-dw/utils/transformations"
-      }
+      "path": "/Repos/uBearDW-databricks-lakehouse/pipelines/bronze_pipeline"
     }
-  ]
+  ],
+  "continuous": true,
+  "development": false,
+  "channel": "CURRENT",
+  "edition": "CORE",
+  "serverless": true
 }

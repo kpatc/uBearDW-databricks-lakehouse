@@ -81,12 +81,10 @@ resource "google_sql_database_instance" "ubear_postgres" {
     disk_type = "PD_HDD"
     disk_size = 10 # GB
 
-    # Backup configuration
+    # Backup configuration (désactivé pour économiser - petit projet test)
     backup_configuration {
-      enabled                        = true
-      start_time                     = "03:00"
+      enabled                        = false  # Désactivé pour économiser
       point_in_time_recovery_enabled = false
-      transaction_log_retention_days = 1
     }
 
     # IP configuration
@@ -99,18 +97,18 @@ resource "google_sql_database_instance" "ubear_postgres" {
       }
     }
 
-    # Database flags pour Debezium CDC
+    # Database flags pour Debezium CDC (minimisé pour petit projet)
     database_flags {
       name  = "cloudsql.logical_decoding"
       value = "on"
     }
     database_flags {
       name  = "max_replication_slots"
-      value = "5"
+      value = "10"  # Minimum autorisé par GCP
     }
     database_flags {
       name  = "max_wal_senders"
-      value = "5"
+      value = "10"  # Minimum autorisé par GCP
     }
 
     # Maintenance window
@@ -122,11 +120,6 @@ resource "google_sql_database_instance" "ubear_postgres" {
   }
 
   deletion_protection = false
-
-  tags = {
-    environment = var.environment
-    project     = "ubear-dw"
-  }
 }
 
 # Database
@@ -149,7 +142,7 @@ resource "google_sql_user" "ubear_user" {
 resource "google_pubsub_topic" "eater_cdc" {
   name = "ubear-eater-cdc"
 
-  message_retention_duration = "86400s" # 1 jour
+  message_retention_duration = "3600s" # 1 heure (au lieu de 1 jour) - économique
   
   labels = {
     environment = var.environment
@@ -161,7 +154,7 @@ resource "google_pubsub_topic" "eater_cdc" {
 resource "google_pubsub_topic" "merchant_cdc" {
   name = "ubear-merchant-cdc"
 
-  message_retention_duration = "86400s"
+  message_retention_duration = "3600s" # 1 heure - économique
   
   labels = {
     environment = var.environment
@@ -173,7 +166,7 @@ resource "google_pubsub_topic" "merchant_cdc" {
 resource "google_pubsub_topic" "courier_cdc" {
   name = "ubear-courier-cdc"
 
-  message_retention_duration = "86400s"
+  message_retention_duration = "3600s" # 1 heure - économique
   
   labels = {
     environment = var.environment
@@ -185,7 +178,7 @@ resource "google_pubsub_topic" "courier_cdc" {
 resource "google_pubsub_topic" "trip_events_cdc" {
   name = "ubear-trip-events-cdc"
 
-  message_retention_duration = "86400s"
+  message_retention_duration = "3600s" # 1 heure - économique
   
   labels = {
     environment = var.environment
@@ -197,7 +190,7 @@ resource "google_pubsub_topic" "trip_events_cdc" {
 resource "google_pubsub_topic" "schema_changes" {
   name = "ubear-schema-changes"
 
-  message_retention_duration = "86400s"
+  message_retention_duration = "3600s" # 1 heure - économique
   
   labels = {
     environment = var.environment
@@ -215,7 +208,7 @@ resource "google_pubsub_subscription" "eater_sub" {
   topic = google_pubsub_topic.eater_cdc.name
 
   ack_deadline_seconds = 60
-  message_retention_duration = "86400s" # 1 jour
+  message_retention_duration = "3600s" # 1 heure - économique
 
   expiration_policy {
     ttl = "" # Never expire
@@ -223,7 +216,7 @@ resource "google_pubsub_subscription" "eater_sub" {
 
   retry_policy {
     minimum_backoff = "10s"
-    maximum_backoff = "600s"
+    maximum_backoff = "300s" # Réduit de 600s
   }
 }
 
@@ -232,7 +225,7 @@ resource "google_pubsub_subscription" "merchant_sub" {
   topic = google_pubsub_topic.merchant_cdc.name
 
   ack_deadline_seconds = 60
-  message_retention_duration = "86400s"
+  message_retention_duration = "3600s" # 1 heure - économique
 
   expiration_policy {
     ttl = ""
@@ -240,7 +233,7 @@ resource "google_pubsub_subscription" "merchant_sub" {
 
   retry_policy {
     minimum_backoff = "10s"
-    maximum_backoff = "600s"
+    maximum_backoff = "300s" # Réduit
   }
 }
 
@@ -249,7 +242,7 @@ resource "google_pubsub_subscription" "courier_sub" {
   topic = google_pubsub_topic.courier_cdc.name
 
   ack_deadline_seconds = 60
-  message_retention_duration = "86400s"
+  message_retention_duration = "3600s" # 1 heure - économique
 
   expiration_policy {
     ttl = ""
@@ -257,7 +250,7 @@ resource "google_pubsub_subscription" "courier_sub" {
 
   retry_policy {
     minimum_backoff = "10s"
-    maximum_backoff = "600s"
+    maximum_backoff = "300s" # Réduit
   }
 }
 
@@ -266,7 +259,7 @@ resource "google_pubsub_subscription" "trip_events_sub" {
   topic = google_pubsub_topic.trip_events_cdc.name
 
   ack_deadline_seconds = 60
-  message_retention_duration = "86400s"
+  message_retention_duration = "3600s" # 1 heure - économique
 
   expiration_policy {
     ttl = ""
@@ -274,7 +267,7 @@ resource "google_pubsub_subscription" "trip_events_sub" {
 
   retry_policy {
     minimum_backoff = "10s"
-    maximum_backoff = "600s"
+    maximum_backoff = "300s" # Réduit
   }
 }
 

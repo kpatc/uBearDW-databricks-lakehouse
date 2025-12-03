@@ -1,0 +1,10 @@
+*.md
+.git
+.gitignore
+*.log
+offsets.dat
+*.backup
+terraform.tfstate*
+tfplan
+*.tfvars
+!terraform.tfvars.example

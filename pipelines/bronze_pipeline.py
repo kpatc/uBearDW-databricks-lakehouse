@@ -114,6 +114,7 @@ def read_kafka_topic(topic_name):
     sasl_jaas_config = 'org.apache.kafka.common.security.plain.PlainLoginModule required username="HYPO6LDVPLC2EAYE" password="cfltDnW60V6dsBmYpBFAjnAaQq+lA70I7tim4/XLDCftn0jMqMxAfx4AxdaiC9Iw";'
     
     # Configuration Confluent Cloud SASL_SSL
+    # Note: kafka.admin.* options not supported on Databricks Serverless/Shared clusters
     return (
         spark.readStream
         .format("kafka")
@@ -121,14 +122,10 @@ def read_kafka_topic(topic_name):
         .option("subscribe", topic_name)
         .option("startingOffsets", "earliest")
         .option("failOnDataLoss", "false")
-        # Confluent Cloud Authentication (Consumer)
+        # Confluent Cloud Authentication
         .option("kafka.security.protocol", "SASL_SSL")
         .option("kafka.sasl.mechanism", "PLAIN")
         .option("kafka.sasl.jaas.config", sasl_jaas_config)
-        # Kafka Admin Client Authentication (required for metadata operations)
-        .option("kafka.admin.security.protocol", "SASL_SSL")
-        .option("kafka.admin.sasl.mechanism", "PLAIN")
-        .option("kafka.admin.sasl.jaas.config", sasl_jaas_config)
         .load()
     )
 

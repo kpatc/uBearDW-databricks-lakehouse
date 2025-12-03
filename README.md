@@ -1,427 +1,290 @@
-# uBear Eats Data Warehouse - Databricks Lakehouse
+# uBear Eats Data Warehouse
 
-![Architecture](https://img.shields.io/badge/Platform-Databricks-FF3621?logo=databricks)
-![Delta Lake](https://img.shields.io/badge/Storage-Delta_Lake-00ADD8?logo=delta)
-![Streaming](https://img.shields.io/badge/Streaming-Kafka-231F20?logo=apache-kafka)
-![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python)
+[![Platform](https://img.shields.io/badge/Platform-Databricks-FF3621?logo=databricks)](https://databricks.com)
+[![Delta Lake](https://img.shields.io/badge/Storage-Delta_Lake-00ADD8)](https://delta.io)
+[![GCP](https://img.shields.io/badge/Cloud-Google_Cloud-4285F4?logo=google-cloud)](https://cloud.google.com)
+[![CDC](https://img.shields.io/badge/CDC-Debezium-4EA94B)](https://debezium.io)
 
-Data Warehouse moderne pour uBear Eats construit sur Databricks Lakehouse avec architecture Medallion (Bronze-Silver-Gold).
+Modern data warehouse for uBear Eats food delivery platform, built on Databricks Lakehouse with Medallion architecture (Bronze-Silver-Gold) and real-time CDC streaming.
 
-## 📋 Table des matières
+## 🎯 Overview
 
-- [Vue d'ensemble](#vue-densemble)
-- [Architecture](#architecture)
-- [Structure du projet](#structure-du-projet)
-- [Pipelines](#pipelines)
-- [Configuration](#configuration)
-- [Déploiement](#déploiement)
-- [Développement local](#développement-local)
-- [Qualité des données](#qualité-des-données)
+This project implements an end-to-end data warehouse solution that centralizes and transforms transactional data from uBear Eats for analytics and reporting. It covers the complete order journey from customer placement to courier delivery.
 
-## 🎯 Vue d'ensemble
+**Key Features:**
+- 🔄 Real-time CDC ingestion from PostgreSQL via Debezium
+- ☁️ Cloud-native architecture on Google Cloud Platform
+- 🏗️ Medallion architecture (Bronze → Silver → Gold)
+- 📊 Delta Live Tables for automated data quality
+- 🌍 Geospatial enrichment with Geohash and H3
+- 📈 SCD Type 2 for dimension tracking
 
-Ce Data Warehouse centralise et transforme les données transactionnelles de uBear Eats (plateforme de livraison de nourriture) pour l'analyse et le reporting. Il couvre le parcours complet de la commande depuis le client jusqu'à la livraison.
+### Data Sources
 
-### Cas d'usage
+All source data originates from **Google Cloud SQL PostgreSQL** and flows through a fully managed CDC pipeline:
 
-- **Analyse des performances** : Suivi des métriques de livraison, temps de préparation, satisfaction client
-- **Optimisation logistique** : Analyse des zones de livraison, performance des couriers
-- **Business Intelligence** : Reporting des ventes, analyse des merchants, comportement clients
-- **Data Science** : Modèles de prédiction (temps de livraison, demand forecasting)
+| Component | Technology | Description |
+|-----------|-----------|-------------|
+| **Transactional DB** | Cloud SQL PostgreSQL 15 | Source database with 4 tables (eater, merchant, courier, trip_events) |
+| **CDC Capture** | Debezium Server 2.5 | Deployed on Cloud Run, captures changes via pgoutput plugin |
+| **Event Streaming** | Google Pub/Sub | 5 topics with subscriptions for reliable message delivery |
+| **Data Processing** | Databricks DLT | Bronze → Silver → Gold transformations |
 
-### Données sources
-
-| Source | Description | Mode d'ingestion |
-|--------|-------------|------------------|
-| PostgreSQL `eater` | Données clients | CDC Streaming (Debezium) |
-| PostgreSQL `merchant` | Restaurants/marchands | CDC Streaming (Debezium) |
-| PostgreSQL `courier` | Livreurs | CDC Streaming (Debezium) |
-| PostgreSQL `trip_events` | Événements de commandes | CDC Streaming (Debezium) |
-
-## 🏗️ Architecture
-
-### Architecture Medallion (Bronze → Silver → Gold)
-
+**CDC Flow:**
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         SOURCES (PostgreSQL)                        │
-│    Eater   │   Merchant   │   Courier   │   Trip Events           │
-└──────────────────────────┬──────────────────────────────────────────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │   Debezium   │ (CDC)
-                    │     Kafka    │
-                    └──────┬───────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      BRONZE LAYER (Raw CDC)                         │
-│  - trip_events_bronze    - eater_bronze                            │
-│  - merchant_bronze       - courier_bronze                          │
-│  Storage: Delta Lake | Mode: Streaming | DLT Pipeline              │
-└──────────────────────────┬──────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                   SILVER LAYER (Cleaned & Validated)                │
-│  - trip_events_silver    - eater_silver                            │
-│  - merchant_silver       - courier_silver                          │
-│  Storage: Delta Lake | Mode: Streaming | DLT Pipeline              │
-│  Data Quality: Expectations, Deduplication, Parsing                │
-└──────────────────────────┬──────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                   GOLD LAYER (Analytics Ready)                      │
-│  DIMENSIONS (SCD Type 2):                                           │
-│    - dim_eater          - dim_merchant      - dim_courier          │
-│    - dim_date           - dim_time          - dim_location         │
-│  FACT TABLE:                                                        │
-│    - trip_fact (commandes & livraisons)                            │
-│  Storage: Delta Lake | Mode: Batch | Databricks Notebook           │
-└─────────────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │   Reporting &   │
-                  │   Analytics     │
-                  │  (BI Tools)     │
-                  └─────────────────┘
+Cloud SQL WAL → Debezium (pgoutput) → Pub/Sub Topics → DLT Streaming → Delta Tables
 ```
 
-### Technologies utilisées
+## 📐 Architecture
 
-- **Platform**: Databricks (AWS/Azure/GCP)
-- **Storage**: Delta Lake (ACID transactions, time travel, schema evolution)
-- **Streaming**: Apache Kafka + Debezium CDC
-- **Processing**: Apache Spark (PySpark)
-- **Orchestration**: Databricks Workflows/Jobs
-- **Data Quality**: Delta Live Tables Expectations
-- **CI/CD**: Git integration avec Databricks Repos
-
-## 📁 Structure du projet
-
+### Data Flow
 ```
-uBearDW-databricks-lakehouse/
-├── pipelines/                    # Pipelines DLT et notebooks
-│   ├── bronze_pipeline.py        # Ingestion CDC streaming (Kafka → Bronze)
-│   ├── silver_pipeline.py        # Transformation et nettoyage (Bronze → Silver)
-│   └── gold_pipeline.py          # Dimensions SCD2 + Fact table (Silver → Gold)
-│
-├── jobs/                         # Configurations Databricks Jobs
-│   ├── batch_job.json            # Job quotidien Gold layer (2 AM UTC)
-│   └── streaming_job.json        # Job streaming continu (Bronze + Silver)
-│
-├── expectations/                 # Règles de qualité données
-│   └── data_quality.py           # Expectations DLT centralisées
-│
-├── utils/                        # Fonctions utilitaires réutilisables
-│   └── transformations.py        # Transformations communes (SCD2, cleaning, etc.)
-│
-├── databricks_setup/             # Scripts de configuration initiale
-│   └── 02_create_tables.sql      # DDL pour création tables Gold
-│
-├── local_stack/                  # Environnement local de développement
-│   ├── docker-compose.yml        # Kafka + Debezium + PostgreSQL
-│   ├── initdb/init.sql           # Schéma PostgreSQL initial
-│   ├── generate_data.sh          # Script génération données de test
-│   └── simulate_cdc.sh           # Simulation événements CDC
-│
-├── README.md                     # Documentation principale
-└── requirements.txt              # Dépendances Python
+Cloud SQL PostgreSQL → Debezium Server → Pub/Sub → Databricks DLT
+                                                        ↓
+                                    Bronze (Raw CDC) → Silver (Cleaned) → Gold (Analytics)
 ```
 
-## 🚀 Pipelines
+### Technology Stack
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Source** | Cloud SQL PostgreSQL | Transactional database |
+| **CDC** | Debezium Server 2.5 | Change data capture |
+| **Messaging** | Google Pub/Sub | Event streaming |
+| **Processing** | Databricks (Delta Live Tables) | ETL pipelines |
+| **Storage** | Delta Lake | ACID-compliant data lake |
+| **Orchestration** | Databricks Workflows | Job scheduling |
+| **IaC** | Terraform | Infrastructure automation |
 
-### 1. Bronze Pipeline (Streaming - DLT)
+## 📁 Project Structure
 
-**Fichier**: `pipelines/bronze_pipeline.py`
+```
+├── pipelines/                    # DLT pipeline definitions
+│   ├── bronze_pipeline.py        # Raw CDC ingestion from Pub/Sub
+│   ├── silver_pipeline.py        # Data cleaning & validation
+│   └── gold_pipeline.py          # Business aggregations & dimensions
+├── gcp_infrastructure/           # Google Cloud setup
+│   ├── main.tf                   # Terraform infrastructure
+│   ├── init_cloud_sql.sql        # Database initialization
+│   ├── debezium-server/          # CDC configuration
+│   │   ├── application.properties
+│   │   └── Dockerfile
+│   └── deploy_gcp.sh             # Automated deployment
+├── utils/                        # Helper modules
+│   ├── transformations.py        # Reusable transformations
+│   └── optimize_tables.py        # Performance optimization
+├── expectations/                 # Data quality rules
+│   ├── data_quality.py           # DLT expectations
+│   └── data_quality_validation.py # Validation scripts
+├── jobs/                         # Pipeline configurations
+│   ├── bronze_pipeline_config.json
+│   ├── silver_pipeline_config.json
+│   └── gold_pipeline_config.json
+└── local_stack/                  # Local development
+    └── docker-compose.yml        # PostgreSQL + Kafka + Debezium
+```
 
-Ingestion en temps réel des données CDC depuis Kafka vers Delta Lake.
+## 🗂️ Data Model
 
-**Tables créées**:
-- `trip_events_bronze` - Événements de commandes
-- `eater_bronze` - Clients
-- `merchant_bronze` - Restaurants
-- `courier_bronze` - Livreurs
+### Bronze Layer (Raw CDC)
+Streams raw change events from Pub/Sub subscriptions:
+- `eater_bronze` - Customer data
+- `merchant_bronze` - Restaurant/merchant data
+- `courier_bronze` - Delivery driver data
+- `trip_events_bronze` - Order lifecycle events
 
-**Caractéristiques**:
-- Mode: Streaming continu
-- Source: Kafka (Debezium CDC envelope)
-- Format: Delta Lake avec Change Data Feed activé
-- Watermark: 10 minutes sur `event_time`
-- Expectations: Validation des clés primaires (NOT NULL)
+### Silver Layer (Cleaned & Typed)
+Deduplicated and validated data with proper typing:
+- `eater_silver` - Deduplicated customers
+- `merchant_silver` - Active merchants
+- `courier_silver` - Active couriers
+- `trip_events_silver` - Valid trip events
 
-**Démarrage**:
+### Gold Layer (Analytics-Ready)
+Star schema with dimensions and fact tables:
+
+**Dimensions:**
+- `dim_eater` - Customer dimension (SCD Type 2)
+- `dim_merchant` - Merchant dimension (SCD Type 2)
+- `dim_courier` - Courier dimension (SCD Type 2)
+- `dim_location` - Geocoded locations (Geohash + H3)
+- `dim_date` - Date dimension
+- `dim_time` - Time dimension
+
+**Fact:**
+- `trip_fact` - Trip metrics with lifecycle aggregations
+
+## 🚀 Quick Start
+
+### Prerequisites
+- GCP account with billing enabled
+- Databricks workspace (free trial supported)
+- Terraform >= 1.12
+- gcloud CLI
+
+### 1. Deploy Infrastructure
+
 ```bash
-# Via Databricks UI: Delta Live Tables → Create Pipeline
-# Ou via API:
-databricks pipelines create --settings bronze_pipeline_config.json
+cd gcp_infrastructure
+
+# Configure GCP credentials
+gcloud auth login
+gcloud auth application-default login
+
+# Set variables
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your project details
+
+# Deploy
+./deploy_gcp.sh
 ```
 
-### 2. Silver Pipeline (Streaming - DLT)
+This creates:
+- Cloud SQL PostgreSQL instance
+- 5 Pub/Sub topics with subscriptions
+- Service accounts with IAM permissions
+- Debezium Server on Cloud Run
 
-**Fichier**: `pipelines/silver_pipeline.py`
+### 2. Configure Databricks
 
-Transformation et nettoyage des données Bronze vers Silver.
+#### Upload Bronze Pipeline
+1. Go to Databricks Workspace → Import
+2. Upload `pipelines/bronze_pipeline.py`
 
-**Transformations appliquées**:
-- Parsing du payload JSON (trip_events)
-- Nettoyage et normalisation (emails, adresses, postal codes)
-- Déduplication
-- Calcul des partitions
-- Validation de qualité (DLT Expectations)
+#### Create DLT Pipeline
+```
+Name: ubear_bronze_ingestion
+Notebook: /Workspace/Users/<email>/bronze_pipeline
+Target: ubear_bronze
 
-**Expectations de qualité**:
-- Validation emails (format, NOT NULL)
-- Validation montants (≥ 0)
-- Validation ratings (1-5)
-- Validation distances (< 100 miles)
+Configuration:
+  gcp.project.id = <your-project-id>
+  gcp.credentials.json = <service-account-json>
 
-### 3. Gold Pipeline (Batch - Notebook)
-
-**Fichier**: `pipelines/gold_pipeline.py`
-
-Transformation Silver vers Gold avec dimensions SCD2 et table de faits.
-
-**Dimensions SCD Type 2** (historisation complète):
-- `dim_eater` - Historique des changements clients
-- `dim_merchant` - Historique des changements restaurants
-- `dim_courier` - Historique des changements livreurs
-
-**Dimensions statiques**:
-- `dim_date` - Calendrier (2020-2030)
-- `dim_time` - Heures du jour avec périodes (peak hours)
-- `dim_location` - Géographie (à implémenter)
-
-**Table de faits**:
-- `trip_fact` - Commandes et livraisons (MERGE upsert sur `trip_id`)
-
-**Exécution**: Job batch quotidien à 2 AM UTC
-
-## ⚙️ Configuration
-
-### Variables d'environnement Databricks
-
-```python
-# Configuration à définir dans Databricks Workflows
-{
-  "kafka.bootstrap.servers": "your-kafka-server:9092",
-  "catalog": "ubear_catalog",
-  "schema.bronze": "ubear_bronze",
-  "schema.silver": "ubear_silver",
-  "schema.gold": "ubear_gold"
-}
+Spark Config:
+  spark.jars.packages = io.github.googleapis:pubsub-spark-sql-streaming_2.12:1.1.0
 ```
 
-### Création du catalogue et schémas
+#### Get Service Account Credentials
+```bash
+cd gcp_infrastructure
+./show_credentials_for_databricks.sh
+```
+
+### 3. Deploy Pipelines
+
+Create DLT pipelines for Silver and Gold layers using configurations in `jobs/` directory.
+
+### 4. Verify Data Flow
 
 ```sql
--- Dans Databricks SQL ou notebook
-CREATE CATALOG IF NOT EXISTS ubear_catalog;
+-- Check Bronze ingestion
+SELECT COUNT(*) FROM ubear_bronze.eater_bronze;
 
-CREATE SCHEMA IF NOT EXISTS ubear_catalog.ubear_bronze
-  COMMENT 'Raw CDC data from source systems';
+-- Check Silver processing  
+SELECT COUNT(*) FROM ubear_silver.eater_silver;
 
-CREATE SCHEMA IF NOT EXISTS ubear_catalog.ubear_silver
-  COMMENT 'Cleaned and validated data';
-
-CREATE SCHEMA IF NOT EXISTS ubear_catalog.ubear_gold
-  COMMENT 'Analytics-ready dimensional model';
+-- Check Gold analytics
+SELECT * FROM ubear_gold.trip_fact LIMIT 10;
 ```
 
-## 📦 Déploiement
+## 🧪 Local Development
 
-### Prérequis
-
-- Databricks Workspace (AWS/Azure/GCP)
-- Kafka cluster avec Debezium CDC configuré
-- PostgreSQL source avec réplication logique activée
-- Git repo connecté à Databricks Repos
-
-### Étapes de déploiement
-
-#### 1. Configurer Databricks Repos
+For local testing with Docker (development environment):
 
 ```bash
-# Dans Databricks UI: Repos → Add Repo
-# URL: https://github.com/kpatc/uBearDW-databricks-lakehouse
-# Branch: main
-```
-
-#### 2. Créer les pipelines DLT
-
-**Bronze Pipeline**:
-```bash
-databricks pipelines create \
-  --json '{
-    "name": "ubear_bronze_streaming",
-    "storage": "/mnt/datalake/ubear/dlt/bronze",
-    "target": "ubear_bronze",
-    "notebooks": ["/Repos/ubear-dw/pipelines/bronze_pipeline"],
-    "configuration": {
-      "kafka.bootstrap.servers": "kafka:9092"
-    },
-    "continuous": true
-  }'
-```
-
-**Silver Pipeline**:
-```bash
-databricks pipelines create \
-  --json '{
-    "name": "ubear_silver_streaming",
-    "storage": "/mnt/datalake/ubear/dlt/silver",
-    "target": "ubear_silver",
-    "notebooks": ["/Repos/ubear-dw/pipelines/silver_pipeline"],
-    "continuous": true
-  }'
-```
-
-#### 3. Créer le job batch Gold
-
-```bash
-databricks jobs create --json-file jobs/batch_job.json
-```
-
-#### 4. Démarrer les pipelines
-
-```bash
-# Démarrer Bronze streaming
-databricks pipelines start --pipeline-id <bronze_pipeline_id>
-
-# Démarrer Silver streaming
-databricks pipelines start --pipeline-id <silver_pipeline_id>
-
-# Le job batch Gold est schedulé quotidiennement (2 AM UTC)
-```
-
-## 🛠️ Développement local
-
-### Setup environnement local avec Docker
-
-```bash
-# Démarrer PostgreSQL + Kafka + Debezium
 cd local_stack
+
+# Start PostgreSQL + Kafka + Debezium
 docker-compose up -d
 
-# Attendre que les services démarrent (30-60 secondes)
-sleep 30
+# Initialize database
+docker exec -i postgres psql -U foodapp -d foodapp < init_tables.sql
 
-# Générer des données de test
+# Generate test data
 ./generate_data.sh
 
-# Enregistrer le connecteur Debezium
+# Register Debezium connector
 ./register_connector.sh
-
-# Simuler des événements CDC
-./simulate_cdc.sh
 ```
 
-### Tester les pipelines localement
+**⚠️ Note:** The local stack uses Kafka for CDC streaming. To connect with Databricks for testing:
 
-Les pipelines DLT ne peuvent pas s'exécuter localement. Pour le développement:
+**Option 1: Local Spark Processing**
+- Build the data warehouse in local PostgreSQL
+- Run pipelines using local Spark installation
+- Useful for development and unit testing
 
-1. Utiliser Databricks Community Edition (gratuit)
-2. Ou tester la logique PySpark dans des notebooks locaux
-3. Utiliser `pytest` pour les fonctions dans `utils/`
+**Option 2: Databricks Connection via Tunnel**
+- Use ngrok or similar to expose local Kafka: `ngrok tcp 29092`
+- Update Databricks pipeline config with public endpoint
+- Allows testing full Databricks DLT pipelines locally
 
-```bash
-# Installer les dépendances
-pip install -r requirements.txt
 
-# Exécuter les tests (si configurés)
-pytest tests/
-```
+## 📊 Data Quality
 
-## 🔍 Qualité des données
+The project implements comprehensive data quality checks:
 
 ### DLT Expectations
+- Non-null primary keys
+- Valid email formats
+- Coordinate range validations
+- Rating bounds (0-5)
+- Referential integrity
 
-Le projet utilise Delta Live Tables Expectations pour garantir la qualité:
-
-**Niveaux de validation**:
-- `@dlt.expect()` - Log les violations (métriques)
-- `@dlt.expect_or_drop()` - Rejette les enregistrements invalides
-- `@dlt.expect_or_fail()` - Fait échouer le pipeline
-
-**Exemple de règles** (voir `expectations/data_quality.py`):
-```python
-# Silver layer
-@dlt.expect_or_drop("valid_email", "email IS NOT NULL AND email LIKE '%@%'")
-@dlt.expect("valid_ratings", "eater_rating IS NULL OR (eater_rating >= 1 AND eater_rating <= 5)")
-
-# Gold layer
-@dlt.expect_or_fail("valid_foreign_keys", "eater_id IS NOT NULL AND merchant_id IS NOT NULL")
+### Quality Validation
+```bash
+# Run validation suite
+python expectations/data_quality_validation.py \
+  --catalog ubear_catalog \
+  --schema ubear_gold
 ```
 
-### Monitoring
+## ⚡ Performance Optimization
 
-Accédez aux métriques de qualité via:
-- Databricks DLT Pipeline UI → Data Quality tab
-- Event Logs pour violations détaillées
-- System tables: `system.dlt.<pipeline>.event_log`
-
-## 📊 Modèle de données Gold
-
-### Star Schema
-
-```
-                    ┌──────────────┐
-                    │  dim_date    │
-                    └──────┬───────┘
-                           │
-    ┌──────────────┐       │       ┌──────────────┐
-    │  dim_eater   │───────┼───────│ dim_merchant │
-    │   (SCD2)     │       │       │   (SCD2)     │
-    └──────────────┘       │       └──────────────┘
-                           │
-                    ┌──────┴───────┐
-                    │  trip_fact   │
-                    └──────┬───────┘
-                           │
-    ┌──────────────┐       │       ┌──────────────┐
-    │  dim_time    │───────┼───────│ dim_courier  │
-    └──────────────┘       │       │   (SCD2)     │
-                           │       └──────────────┘
-                    ┌──────┴───────┐
-                    │ dim_location │
-                    └──────────────┘
+```bash
+# Optimize Gold tables with Z-ordering
+python utils/optimize_tables.py \
+  --catalog ubear_catalog \
+  --schema ubear_gold
 ```
 
-### Tables principales
+This runs:
+- OPTIMIZE for compaction
+- ZORDER BY on frequently filtered columns
+- ANALYZE TABLE for statistics
 
-**trip_fact** (Faits):
-- Clé: `trip_id` (order_id)
-- Mesures: montants (subtotal, delivery_fee, tip, total), métriques temporelles, ratings
-- Granularité: Une ligne par commande/livraison
-- Partitions: `date_partition`, `region_partition`
+## 🔒 Security
 
-**Dimensions SCD2**:
-- Historisation complète des changements
-- Colonnes SCD2: `effective_start_date`, `effective_end_date`, `is_current`, `version_number`, `row_hash`
+- Service accounts with least-privilege IAM roles
+- Credentials managed via Databricks secrets
+- Cloud SQL with private IP (optional)
+- Pub/Sub message encryption at rest
 
-## 🤝 Contribution
+## 📈 Monitoring
 
-Pour contribuer au projet:
+Key metrics to track:
+- **Pipeline Health:** DLT pipeline status and failures
+- **Data Freshness:** Lag between CDC and Gold tables
+- **Data Quality:** Expectation violations
+- **Performance:** Pipeline execution time, Pub/Sub lag
 
-1. Fork le repository
-2. Créer une branche feature (`git checkout -b feature/AmazingFeature`)
-3. Commit les changements (`git commit -m 'Add AmazingFeature'`)
-4. Push vers la branche (`git push origin feature/AmazingFeature`)
-5. Ouvrir une Pull Request
+## 🤝 Contributing
+
+This is a portfolio/demo project. For production use:
+1. Add proper CI/CD pipelines
+2. Implement comprehensive testing
+3. Add monitoring and alerting
+4. Review security configurations
+5. Implement disaster recovery
 
 ## 📝 License
 
-Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+This project is licensed under the MIT License - see [LICENSE](LICENSE) file.
 
-## 👥 Contact
+## 🙏 Acknowledgments
 
-Data Engineering Team - data-team@ubear.com
-
-Project Link: [https://github.com/kpatc/uBearDW-databricks-lakehouse](https://github.com/kpatc/uBearDW-databricks-lakehouse)
+- [Databricks](https://databricks.com) for Lakehouse platform
+- [Debezium](https://debezium.io) for CDC framework
+- [Delta Lake](https://delta.io) for reliable storage
 
 ---
-
-**Note**: Ce projet est un exemple d'architecture moderne de Data Warehouse sur Databricks Lakehouse. Adaptez-le selon vos besoins spécifiques.

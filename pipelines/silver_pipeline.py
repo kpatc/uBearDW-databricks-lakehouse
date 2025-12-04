@@ -101,17 +101,15 @@ trip_payload_schema = StructType([
 def trip_events_silver():
     """
     Transformation Bronze -> Silver pour trip_events.
-    - Parse le payload JSONB
-    - Agrège les événements par trip_id pour reconstituer le cycle complet
+    - Les données sont déjà parsées dans Bronze
     - Applique nettoyage et validation
+    - Agrège les événements par trip_id
     """
     df = dlt.read_stream("ubear_catalog.ubear_bronze.trip_events_bronze")
     
-    # Parse le payload JSONB
-    parsed_df = df.withColumn("payload_parsed", from_json(col("payload"), trip_payload_schema))
-    
-    # Extraction et enrichissement
-    silver_df = parsed_df.select(
+    # Les colonnes sont déjà extraites du payload dans Bronze
+    # Sélectionner et nettoyer les colonnes pertinentes
+    silver_df = df.select(
         col("event_id"),
         col("trip_id"),
         col("order_id"),
@@ -120,37 +118,11 @@ def trip_events_silver():
         col("courier_id"),
         col("event_type"),
         col("event_time"),
-        # Montants
-        coalesce(col("payload_parsed.subtotal_amount"), lit(0.0)).alias("subtotal_amount"),
-        coalesce(col("payload_parsed.delivery_fee"), lit(0.0)).alias("delivery_fee"),
-        coalesce(col("payload_parsed.service_fee"), lit(0.0)).alias("service_fee"),
-        coalesce(col("payload_parsed.tax_amount"), lit(0.0)).alias("tax_amount"),
-        coalesce(col("payload_parsed.tip_amount"), lit(0.0)).alias("tip_amount"),
-        coalesce(col("payload_parsed.total_amount"), lit(0.0)).alias("total_amount"),
-        col("payload_parsed.courier_payout").alias("courier_payout"),
-        # Distances et temps
-        col("payload_parsed.distance_miles").alias("distance_miles"),
-        col("payload_parsed.total_distance_miles").alias("total_distance_miles"),
-        col("payload_parsed.courier_distance_miles").alias("courier_distance_miles"),
-        col("payload_parsed.preparation_time_minutes").alias("preparation_time_minutes"),
-        col("payload_parsed.estimated_prep_time_minutes").alias("estimated_prep_time_minutes"),
-        col("payload_parsed.actual_prep_time_minutes").alias("actual_prep_time_minutes"),
-        col("payload_parsed.delivery_time_minutes").alias("delivery_time_minutes"),
-        col("payload_parsed.total_time_minutes").alias("total_time_minutes"),
-        # Statut et flags
-        col("payload_parsed.trip_status").alias("trip_status"),
-        coalesce(col("payload_parsed.is_group_order"), lit(False)).alias("is_group_order"),
-        # Promotion et ratings
-        col("payload_parsed.promo_code").alias("promo_code_used"),
-        coalesce(col("payload_parsed.discount_amount"), lit(0.0)).alias("discount_amount"),
-        col("payload_parsed.eater_rating").alias("eater_rating"),
-        col("payload_parsed.courier_rating").alias("courier_rating"),
-        col("payload_parsed.merchant_rating").alias("merchant_rating"),
-        # Contexte
-        col("payload_parsed.weather_condition").alias("weather_condition"),
-        col("payload_parsed.items").alias("items"),
-        # Métadonnées
-        to_date(col("event_time")).alias("date_partition"),
+        # Payload contient les détails - garder le raw pour référence
+        col("raw_json").alias("payload"),
+        col("cdc_operation"),
+        col("cdc_timestamp"),
+        col("cdc_snapshot"),
         col("created_at"),
         col("kafka_timestamp"),
         current_timestamp().alias("silver_load_time")

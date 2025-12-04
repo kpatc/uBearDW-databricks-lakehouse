@@ -96,12 +96,11 @@ trip_payload_schema = StructType([
     }
 )
 @dlt.expect_or_drop("valid_trip_id", "trip_id IS NOT NULL")
-@dlt.expect_or_drop("valid_order_id", "order_id IS NOT NULL")
 @dlt.expect("valid_event_type", "event_type IS NOT NULL")
 def trip_events_silver():
     """
     Transformation Bronze -> Silver pour trip_events.
-    - Event stream avec actor_type/actor_id
+    - Trip lifecycle events avec order, eater, merchant, courier tracking
     - Les données sont déjà parsées dans Bronze
     - Applique nettoyage et validation
     """
@@ -111,13 +110,13 @@ def trip_events_silver():
     silver_df = df.select(
         col("event_id"),
         col("trip_id"),
+        col("order_id"),
+        col("eater_id"),
+        col("merchant_id"),
+        col("courier_id"),
         col("event_type"),
-        col("event_timestamp"),
-        col("actor_type"),
-        col("actor_id"),
-        col("latitude"),
-        col("longitude"),
-        col("event_details"),
+        col("event_time"),
+        col("payload"),
         col("cdc_operation"),
         col("cdc_timestamp"),
         col("cdc_snapshot"),

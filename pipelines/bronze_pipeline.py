@@ -69,14 +69,14 @@ courier_payload_schema = StructType([
 
 trip_events_payload_schema = StructType([
     StructField("event_id", IntegerType(), True),
-    StructField("trip_id", IntegerType(), True),
+    StructField("trip_id", StringType(), True),
+    StructField("order_id", StringType(), True),
+    StructField("eater_id", IntegerType(), True),
+    StructField("merchant_id", IntegerType(), True),
+    StructField("courier_id", IntegerType(), True),
     StructField("event_type", StringType(), True),
-    StructField("event_timestamp", LongType(), True),
-    StructField("latitude", StringType(), True),
-    StructField("longitude", StringType(), True),
-    StructField("actor_type", StringType(), True),
-    StructField("actor_id", IntegerType(), True),
-    StructField("event_details", StringType(), True),
+    StructField("event_time", LongType(), True),
+    StructField("payload", StringType(), True),  # JSONB as string
     StructField("created_at", LongType(), True)
 ])
 
@@ -332,13 +332,13 @@ def trip_events_bronze():
     ).select(
         col("after_parsed.event_id").alias("event_id"),
         col("after_parsed.trip_id").alias("trip_id"),
+        col("after_parsed.order_id").alias("order_id"),
+        col("after_parsed.eater_id").alias("eater_id"),
+        col("after_parsed.merchant_id").alias("merchant_id"),
+        col("after_parsed.courier_id").alias("courier_id"),
         col("after_parsed.event_type").alias("event_type"),
-        to_timestamp(col("after_parsed.event_timestamp") / 1000).alias("event_timestamp"),
-        col("after_parsed.latitude").cast("decimal(10,7)").alias("latitude"),
-        col("after_parsed.longitude").cast("decimal(10,7)").alias("longitude"),
-        col("after_parsed.actor_type").alias("actor_type"),
-        col("after_parsed.actor_id").alias("actor_id"),
-        col("after_parsed.event_details").alias("event_details"),
+        to_timestamp(col("after_parsed.event_time") / 1000).alias("event_time"),
+        col("after_parsed.payload").alias("payload"),
         
         to_timestamp(col("after_parsed.created_at") / 1000).alias("created_at"),
         

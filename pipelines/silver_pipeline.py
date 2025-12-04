@@ -105,7 +105,7 @@ def trip_events_silver():
     - Agrège les événements par trip_id pour reconstituer le cycle complet
     - Applique nettoyage et validation
     """
-    df = dlt.read_stream("trip_events_bronze")
+    df = dlt.read_stream("ubear_catalog.ubear_bronze.trip_events_bronze")
     
     # Parse le payload JSONB
     parsed_df = df.withColumn("payload_parsed", from_json(col("payload"), trip_payload_schema))
@@ -152,7 +152,7 @@ def trip_events_silver():
         # Métadonnées
         to_date(col("event_time")).alias("date_partition"),
         col("created_at"),
-        col("ingestion_timestamp"),
+        col("kafka_timestamp"),
         current_timestamp().alias("silver_load_time")
     )
     
@@ -183,7 +183,7 @@ def eater_silver():
     - Nettoie adresses et téléphones
     - Prépare pour enrichissement Gold (lifetime metrics calculées dans Gold)
     """
-    df = dlt.read_stream("eater_bronze")
+    df = dlt.read_stream("ubear_catalog.ubear_bronze.eater_bronze")
     
     cleaned_df = df.select(
         col("eater_id"),
@@ -207,7 +207,7 @@ def eater_silver():
         col("is_active"),
         col("created_at"),
         col("updated_at"),
-        col("ingestion_timestamp"),
+        col("kafka_timestamp"),
         current_timestamp().alias("silver_load_time")
     ).dropDuplicates(["eater_id"])
     
@@ -229,7 +229,7 @@ def eater_silver():
     }
 )
 @dlt.expect_or_drop("valid_merchant_id", "merchant_id IS NOT NULL")
-@dlt.expect("valid_merchant_name", "merchant_name IS NOT NULL")
+@dlt.expect("valid_merchant_name", "name IS NOT NULL")
 @dlt.expect("valid_city", "city IS NOT NULL")
 def merchant_silver():
     """
@@ -238,13 +238,13 @@ def merchant_silver():
     - Standardise types de cuisine
     - Prépare pour enrichissement Gold (ratings, metrics calculées dans Gold)
     """
-    df = dlt.read_stream("merchant_bronze")
+    df = dlt.read_stream("ubear_catalog.ubear_bronze.merchant_bronze")
     
     cleaned_df = df.select(
         col("merchant_id"),
         col("merchant_uuid"),
         # Nom nettoyé
-        trim(col("merchant_name")).alias("merchant_name"),
+        trim(col("name")).alias("name"),
         # Contact
         lower(trim(col("email"))).alias("email"),
         regexp_replace(col("phone_number"), "[^0-9+]", "").alias("phone_number"),
@@ -263,7 +263,7 @@ def merchant_silver():
         col("is_active"),
         col("created_at"),
         col("updated_at"),
-        col("ingestion_timestamp"),
+        col("kafka_timestamp"),
         current_timestamp().alias("silver_load_time")
     ).dropDuplicates(["merchant_id"])
     
@@ -294,7 +294,7 @@ def courier_silver():
     - Standardise license_plate
     - Prépare pour enrichissement Gold (ratings, earnings calculés dans Gold)
     """
-    df = dlt.read_stream("courier_bronze")
+    df = dlt.read_stream("ubear_catalog.ubear_bronze.courier_bronze")
     
     cleaned_df = df.select(
         col("courier_id"),
@@ -313,7 +313,7 @@ def courier_silver():
         col("onboarding_date"),
         col("created_at"),
         col("updated_at"),
-        col("ingestion_timestamp"),
+        col("kafka_timestamp"),
         current_timestamp().alias("silver_load_time")
     ).dropDuplicates(["courier_id"])
     

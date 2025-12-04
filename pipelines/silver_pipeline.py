@@ -101,25 +101,23 @@ trip_payload_schema = StructType([
 def trip_events_silver():
     """
     Transformation Bronze -> Silver pour trip_events.
+    - Event stream avec actor_type/actor_id
     - Les données sont déjà parsées dans Bronze
     - Applique nettoyage et validation
-    - Agrège les événements par trip_id
     """
     df = dlt.read_stream("ubear_catalog.ubear_bronze.trip_events_bronze")
     
     # Les colonnes sont déjà extraites du payload dans Bronze
-    # Sélectionner et nettoyer les colonnes pertinentes
     silver_df = df.select(
         col("event_id"),
         col("trip_id"),
-        col("order_id"),
-        col("eater_id"),
-        col("merchant_id"),
-        col("courier_id"),
         col("event_type"),
-        col("event_time"),
-        # Payload contient les détails - garder le raw pour référence
-        col("raw_json").alias("payload"),
+        col("event_timestamp"),
+        col("actor_type"),
+        col("actor_id"),
+        col("latitude"),
+        col("longitude"),
+        col("event_details"),
         col("cdc_operation"),
         col("cdc_timestamp"),
         col("cdc_snapshot"),

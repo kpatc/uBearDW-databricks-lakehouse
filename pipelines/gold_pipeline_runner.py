@@ -40,14 +40,12 @@ print(f"   - Gold Schema: {gold_schema}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 2. Définir la configuration Spark
+# MAGIC ## 2. Configuration définie - Prêt à exécuter
 
 # COMMAND ----------
 
-spark.conf.set("catalog", catalog)
-spark.conf.set("schema.bronze", bronze_schema)
-spark.conf.set("schema.silver", silver_schema)
-spark.conf.set("schema.gold", gold_schema)
+# Les paramètres sont prêts pour le pipeline
+print("✓ Configuration prête pour exécution")
 
 # COMMAND ----------
 
@@ -67,4 +65,3 @@ spark.conf.set("schema.gold", gold_schema)
 # COMMAND ----------
 
 print("✅ Gold Pipeline exécuté avec succès!")
-print(f"   Timestamp: {spark.sql('SELECT current_timestamp() as ts').collect()[0][0]}")

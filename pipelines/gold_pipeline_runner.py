@@ -10,11 +10,26 @@
 
 # COMMAND ----------
 
-# Paramètres par défaut
-catalog = dbutils.widgets.get("catalog") if "catalog" in [w["name"] for w in dbutils.widgets.getAll()] else "ubear_catalog"
-bronze_schema = dbutils.widgets.get("bronze_schema") if "bronze_schema" in [w["name"] for w in dbutils.widgets.getAll()] else "ubear_bronze"
-silver_schema = dbutils.widgets.get("silver_schema") if "silver_schema" in [w["name"] for w in dbutils.widgets.getAll()] else "ubear_silver"
-gold_schema = dbutils.widgets.get("gold_schema") if "gold_schema" in [w["name"] for w in dbutils.widgets.getAll()] else "ubear_gold"
+# Récupérer les paramètres avec gestion d'erreur
+try:
+    catalog = dbutils.widgets.get("catalog")
+except:
+    catalog = "ubear_catalog"
+
+try:
+    bronze_schema = dbutils.widgets.get("bronze_schema")
+except:
+    bronze_schema = "ubear_bronze"
+
+try:
+    silver_schema = dbutils.widgets.get("silver_schema")
+except:
+    silver_schema = "ubear_silver"
+
+try:
+    gold_schema = dbutils.widgets.get("gold_schema")
+except:
+    gold_schema = "ubear_gold"
 
 print(f"🔧 Configuration chargée:")
 print(f"   - Catalog: {catalog}")

@@ -47,9 +47,9 @@ import geohash2 as geohash  # Pour calcul geohash
 import h3  # Pour calcul H3 index
 
 # Configuration
-CATALOG = spark.conf.get("catalog", "ubear_catalog")
-SCHEMA_SILVER = spark.conf.get("schema.silver", "ubear_silver")
-SCHEMA_GOLD = spark.conf.get("schema.gold", "ubear_gold")
+CATALOG = "ubear_catalog"
+SCHEMA_SILVER = "ubear_silver"
+SCHEMA_GOLD = "ubear_gold"
 
 # COMMAND ----------
 

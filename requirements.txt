@@ -1,32 +1,5 @@
-# Dépendances Python pour uBear Data Warehouse
-# Note: Databricks Runtime inclut déjà PySpark et Delta Lake
 
-# Pour développement local uniquement
-pyspark==3.5.0
-delta-spark==3.0.0
 
-# Databricks SDK et CLI
-databricks-cli==0.18.0
-databricks-sdk==0.18.0
-
-# Utilitaires
-python-dateutil==2.8.2
-pytz==2023.3
-
-# Data Quality
-great-expectations==0.18.8
-
-# Testing
-pytest==7.4.3
-pytest-spark==0.6.0
-
-# Code Quality
-black==23.12.0
-flake8==6.1.0
-mypy==1.7.1
-
-# Kafka (pour tests locaux)
-kafka-python==2.0.2
-
-# Notebooks
-nbformat==5.9.2
+# Geospatial & Indexing (Gold Pipeline)
+geohash2
+h3

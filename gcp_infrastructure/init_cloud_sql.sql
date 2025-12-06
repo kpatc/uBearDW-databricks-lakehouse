@@ -69,66 +69,28 @@ CREATE TABLE IF NOT EXISTS courier (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table trip_events (Fact table - Captures complete order lifecycle)
+-- Table trip_events (Transactional event log - raw events from app)
 CREATE TABLE IF NOT EXISTS trip_events (
     -- Primary & Foreign Keys
     event_id SERIAL PRIMARY KEY,
-    trip_id VARCHAR(50) NOT NULL UNIQUE,
+    trip_id VARCHAR(50) NOT NULL,
     order_id VARCHAR(50) NOT NULL,
     eater_id INTEGER NOT NULL REFERENCES eater(eater_id),
     merchant_id INTEGER NOT NULL REFERENCES merchant(merchant_id),
     courier_id INTEGER REFERENCES courier(courier_id),
     
-    -- Location Information
-    pickup_location_id INTEGER,
-    dropoff_location_id INTEGER,
-    
-    -- Order Timeline Timestamps
-    order_placed_at TIMESTAMP,
-    order_accepted_at TIMESTAMP,
-    courier_dispatched_at TIMESTAMP,
-    pickup_arrived_at TIMESTAMP,
-    pickup_completed_at TIMESTAMP,
-    dropoff_arrived_at TIMESTAMP,
-    delivered_at TIMESTAMP,
-    
-    -- Financial Information
-    subtotal_amount DECIMAL(10, 2),
-    delivery_fee DECIMAL(10, 2),
-    service_fee DECIMAL(10, 2),
-    tax_amount DECIMAL(10, 2),
-    tip_amount DECIMAL(10, 2),
-    total_amount DECIMAL(10, 2),
-    discount_amount DECIMAL(10, 2),
-    courier_payout DECIMAL(10, 2),
-    
-    -- Distance & Time Metrics
-    distance_miles DECIMAL(8, 2),
-    preparation_time_minutes INTEGER,
-    delivery_time_minutes INTEGER,
-    total_time_minutes INTEGER,
-    
-    -- Order Status & Details
-    trip_status VARCHAR(50) DEFAULT 'pending', -- pending, accepted, dispatched, picked_up, in_delivery, completed, cancelled
-    is_group_order BOOLEAN DEFAULT false,
-    promo_code_used VARCHAR(100),
-    
-    -- Ratings & Feedback
-    eater_rating INTEGER,
-    courier_rating INTEGER,
-    merchant_rating INTEGER,
-    
-    -- Environment & Context
-    weather_condition VARCHAR(50),
-    
-    -- Event Metadata
-    event_type VARCHAR(50) NOT NULL,
+    -- Event Info (captured by app at each lifecycle stage)
+    event_type VARCHAR(50) NOT NULL, -- order_placed, order_accepted, courier_dispatched, pickup_arrived, pickup_completed, dropoff_arrived, delivered, cancelled
     event_time TIMESTAMP NOT NULL,
+    
+    -- Order Status (updated by app)
+    trip_status VARCHAR(50) DEFAULT 'pending', -- pending, accepted, dispatched, picked_up, in_delivery, completed, cancelled
+    
+    -- Event Payload (JSONB - contains all contextual data for this event)
     payload JSONB,
     
     -- CDC & Audit
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- =============================================================================
@@ -155,8 +117,6 @@ CREATE INDEX IF NOT EXISTS idx_trip_events_courier_id ON trip_events(courier_id)
 CREATE INDEX IF NOT EXISTS idx_trip_events_status ON trip_events(trip_status);
 CREATE INDEX IF NOT EXISTS idx_trip_events_type ON trip_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_trip_events_time ON trip_events(event_time);
-CREATE INDEX IF NOT EXISTS idx_trip_events_ordered_at ON trip_events(order_placed_at);
-CREATE INDEX IF NOT EXISTS idx_trip_events_delivered_at ON trip_events(delivered_at);
 
 -- =============================================================================
 -- Create Debezium publication (pour pgoutput plugin)
@@ -205,59 +165,62 @@ VALUES
     ('courier-uuid-004', 'Marie', 'Simon', 'marie.simon@ubear.com', '+33690123456', 'car', 'IJ-789-KL', true, '2024-04-20')
 ON CONFLICT (courier_uuid) DO NOTHING;
 
--- Trip events (sample complete trip lifecycle with all columns)
-INSERT INTO trip_events (
-    trip_id, order_id, eater_id, merchant_id, courier_id,
-    pickup_location_id, dropoff_location_id,
-    order_placed_at, order_accepted_at, courier_dispatched_at,
-    pickup_arrived_at, pickup_completed_at, dropoff_arrived_at, delivered_at,
-    subtotal_amount, delivery_fee, service_fee, tax_amount, tip_amount, total_amount, discount_amount, courier_payout,
-    distance_miles, preparation_time_minutes, delivery_time_minutes, total_time_minutes,
-    trip_status, is_group_order, promo_code_used,
-    eater_rating, courier_rating, merchant_rating,
-    weather_condition, event_type, event_time, payload
-)
+-- Trip events (raw transactional events - lifecycle tracking)
+INSERT INTO trip_events (trip_id, order_id, eater_id, merchant_id, courier_id, event_type, event_time, trip_status, payload)
 VALUES
-    -- Trip 1: Complete delivery (Paris)
-    ('trip-001', 'order-001', 1, 1, 1, 101, 201,
-     '2024-12-01 12:00:00', '2024-12-01 12:02:00', '2024-12-01 12:10:00',
-     '2024-12-01 12:15:00', '2024-12-01 12:18:00', '2024-12-01 12:33:00', '2024-12-01 12:35:00',
-     35.50, 3.50, 2.00, 3.00, 5.00, 49.00, 0.00, 10.00,
-     2.5, 15, 17, 35,
-     'completed', false, NULL,
-     5, 5, 4,
-     'clear', 'delivered', '2024-12-01 12:35:00', '{"order_total_amount": 35.50, "delivery_fee": 3.50, "items": [{"name": "Steak Frites", "quantity": 1, "price": 22.00}], "payment_method": "credit_card"}'::jsonb),
+    -- Trip 1: Complete delivery lifecycle
+    ('trip-001', 'order-001', 1, 1, NULL, 'order_placed', '2024-12-01 12:00:00', 'pending', 
+     '{"subtotal_amount": 35.50, "delivery_fee": 3.50, "service_fee": 2.00, "tax_amount": 3.00, "total_amount": 44.00, "items": [{"name": "Steak Frites", "quantity": 1, "price": 22.00}, {"name": "Salade", "quantity": 1, "price": 8.50}], "payment_method": "credit_card", "pickup_address": "5 Rue Saint-Honoré, Paris", "dropoff_address": "10 Rue de Rivoli, Paris"}'::jsonb),
     
-    -- Trip 2: Complete delivery (Paris)
-    ('trip-002', 'order-002', 2, 2, 2, 102, 202,
-     '2024-12-01 18:30:00', '2024-12-01 18:32:00', '2024-12-01 18:45:00',
-     '2024-12-01 18:52:00', '2024-12-01 18:54:00', '2024-12-01 19:06:00', '2024-12-01 19:08:00',
-     45.00, 4.00, 2.50, 3.50, 8.00, 63.00, 0.00, 14.00,
-     1.8, 20, 14, 38,
-     'completed', false, NULL,
-     5, 5, 5,
-     'cloudy', 'delivered', '2024-12-01 19:08:00', '{"order_total_amount": 45.00, "delivery_fee": 4.00, "items": [{"name": "Sushi Platter", "quantity": 1, "price": 45.00}], "payment_method": "paypal"}'::jsonb),
+    ('trip-001', 'order-001', 1, 1, NULL, 'order_accepted', '2024-12-01 12:02:00', 'accepted',
+     '{"estimated_prep_time_minutes": 15}'::jsonb),
     
-    -- Trip 3: Cancelled order (Lyon)
-    ('trip-003', 'order-003', 4, 4, NULL, 103, 203,
-     '2024-12-01 17:00:00', '2024-12-01 17:02:00', NULL,
-     NULL, NULL, NULL, NULL,
-     65.00, 4.50, 2.50, 5.00, 0.00, 77.00, 10.00, 0.00,
-     1.5, NULL, NULL, NULL,
-     'cancelled', false, NULL,
-     NULL, NULL, NULL,
-     'rainy', 'cancelled', '2024-12-01 17:05:00', '{"reason": "cancelled_by_eater", "refund_amount": 77.00}'::jsonb),
+    ('trip-001', 'order-001', 1, 1, 1, 'courier_dispatched', '2024-12-01 12:10:00', 'dispatched',
+     '{"courier_distance_km": 2.5}'::jsonb),
     
-    -- Trip 4: In delivery (Marseille)
-    ('trip-004', 'order-004', 5, 5, 4, 104, 204,
-     '2024-12-01 12:15:00', '2024-12-01 12:17:00', '2024-12-01 12:25:00',
-     '2024-12-01 12:40:00', '2024-12-01 12:55:00', NULL, NULL,
-     95.00, 6.00, 4.00, 8.00, 15.00, 128.00, 0.00, 22.00,
-     4.5, 25, NULL, NULL,
-     'in_delivery', true, NULL,
-     NULL, NULL, NULL,
-     'sunny', 'delivery_in_progress', '2024-12-01 12:55:00', '{"items": 4, "group_size": 2, "delivery_notes": "Group order"}'::jsonb)
-ON CONFLICT (trip_id) DO NOTHING;
+    ('trip-001', 'order-001', 1, 1, 1, 'pickup_arrived', '2024-12-01 12:15:00', 'picked_up',
+     '{"arrival_time": "2024-12-01T12:15:00Z"}'::jsonb),
+    
+    ('trip-001', 'order-001', 1, 1, 1, 'pickup_completed', '2024-12-01 12:18:00', 'picked_up',
+     '{"actual_prep_time_minutes": 16}'::jsonb),
+    
+    ('trip-001', 'order-001', 1, 1, 1, 'dropoff_arrived', '2024-12-01 12:33:00', 'in_delivery',
+     '{"dropoff_arrival_time": "2024-12-01T12:33:00Z"}'::jsonb),
+    
+    ('trip-001', 'order-001', 1, 1, 1, 'delivered', '2024-12-01 12:35:00', 'completed',
+     '{"delivery_time_minutes": 17, "eater_rating": 5, "courier_rating": 5, "merchant_rating": 4, "tip_amount": 5.00, "distance_miles": 2.5}'::jsonb),
+    
+    -- Trip 2: Another complete delivery
+    ('trip-002', 'order-002', 2, 2, NULL, 'order_placed', '2024-12-01 18:30:00', 'pending',
+     '{"subtotal_amount": 45.00, "delivery_fee": 4.00, "service_fee": 2.50, "tax_amount": 3.50, "total_amount": 55.00, "items": [{"name": "Sushi Platter", "quantity": 1, "price": 45.00}], "payment_method": "paypal", "pickup_address": "12 Avenue de l''Opéra, Paris", "dropoff_address": "45 Avenue Montaigne, Paris"}'::jsonb),
+    
+    ('trip-002', 'order-002', 2, 2, NULL, 'order_accepted', '2024-12-01 18:32:00', 'accepted',
+     '{"estimated_prep_time_minutes": 20}'::jsonb),
+    
+    ('trip-002', 'order-002', 2, 2, 2, 'courier_dispatched', '2024-12-01 18:45:00', 'dispatched',
+     '{"courier_distance_km": 1.8}'::jsonb),
+    
+    ('trip-002', 'order-002', 2, 2, 2, 'pickup_arrived', '2024-12-01 18:52:00', 'picked_up',
+     '{"arrival_time": "2024-12-01T18:52:00Z"}'::jsonb),
+    
+    ('trip-002', 'order-002', 2, 2, 2, 'pickup_completed', '2024-12-01 18:54:00', 'picked_up',
+     '{"actual_prep_time_minutes": 22}'::jsonb),
+    
+    ('trip-002', 'order-002', 2, 2, 2, 'dropoff_arrived', '2024-12-01 19:06:00', 'in_delivery',
+     '{"dropoff_arrival_time": "2024-12-01T19:06:00Z"}'::jsonb),
+    
+    ('trip-002', 'order-002', 2, 2, 2, 'delivered', '2024-12-01 19:08:00', 'completed',
+     '{"delivery_time_minutes": 14, "eater_rating": 5, "courier_rating": 5, "merchant_rating": 5, "tip_amount": 8.00, "distance_miles": 1.8, "weather_condition": "cloudy"}'::jsonb),
+    
+    -- Trip 3: Cancelled order
+    ('trip-003', 'order-003', 4, 4, NULL, 'order_placed', '2024-12-01 17:00:00', 'pending',
+     '{"subtotal_amount": 65.00, "delivery_fee": 4.50, "service_fee": 2.50, "tax_amount": 5.00, "total_amount": 77.00, "discount_amount": 10.00, "items": [{"name": "Plat du Jour", "quantity": 2}], "payment_method": "credit_card", "promo_code": "PROMO10"}'::jsonb),
+    
+    ('trip-003', 'order-003', 4, 4, NULL, 'order_accepted', '2024-12-01 17:02:00', 'accepted',
+     '{"estimated_prep_time_minutes": 18}'::jsonb),
+    
+    ('trip-003', 'order-003', 4, 4, NULL, 'cancelled', '2024-12-01 17:05:00', 'cancelled',
+     '{"cancellation_reason": "cancelled_by_eater", "refund_amount": 77.00, "cancellation_fee": 0.00}'::jsonb);
 
 -- =============================================================================
 -- Grant permissions

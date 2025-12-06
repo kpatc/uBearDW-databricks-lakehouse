@@ -354,8 +354,9 @@ eater_silver_df = spark.table(f"{CATALOG}.{SCHEMA_SILVER}.eater_silver")
 trip_events_silver_df = spark.table(f"{CATALOG}.{SCHEMA_SILVER}.trip_events_silver")
 
 # Calculer métriques agrégées par eater depuis trip_events
+# Note: trip_status n'existe pas, on prend tous les events
 eater_metrics = (trip_events_silver_df
-    .filter(col("trip_status") == "delivered")
+    # .filter(col("trip_status") == "delivered")
     .groupBy("eater_id")
     .agg(
         count("*").alias("total_lifetime_orders"),
@@ -676,34 +677,54 @@ trip_aggregated = (trip_with_locations
              "pickup_location_id", "dropoff_location_id", "region_zone")
     .agg(
         spark_max(when(col("event_type") == "order_placed", col("event_time"))).alias("order_placed_at"),
-        spark_max(when(col("event_type") == "merchant_confirmed", col("event_time"))).alias("order_accepted_at"),
-        spark_max(when(col("event_type") == "courier_assigned", col("event_time"))).alias("courier_dispatched_at"),
+        spark_max(when(col("event_type") == "order_accepted", col("event_time"))).alias("order_accepted_at"),
+        spark_max(when(col("event_type") == "courier_dispatched", col("event_time"))).alias("courier_dispatched_at"),
         spark_max(when(col("event_type") == "pickup_arrived", col("event_time"))).alias("pickup_arrived_at"),
         spark_max(when(col("event_type") == "pickup_completed", col("event_time"))).alias("pickup_completed_at"),
+        spark_max(when(col("event_type") == "dropoff_arrived", col("event_time"))).alias("dropoff_arrived_at"),
         spark_max(when(col("event_type") == "delivered", col("event_time"))).alias("delivered_at"),
-        # Prendre les valeurs du dernier événement (delivered)
-        first(col("subtotal_amount")).alias("subtotal_amount"),
-        first(col("delivery_fee")).alias("delivery_fee"),
-        first(col("service_fee")).alias("service_fee"),
-        first(col("tax_amount")).alias("tax_amount"),
-        first(col("tip_amount")).alias("tip_amount"),
-        first(col("total_amount")).alias("total_amount"),
-        first(col("courier_payout")).alias("courier_payout"),
-        first(col("distance_miles")).alias("distance_miles"),
-        first(col("preparation_time_minutes")).alias("preparation_time_minutes"),
-        first(col("delivery_time_minutes")).alias("delivery_time_minutes"),
-        first(col("total_time_minutes")).alias("total_time_minutes"),
-        first(col("trip_status")).alias("trip_status"),
-        first(col("is_group_order")).alias("is_group_order"),
-        first(col("promo_code_used")).alias("promo_code_used"),
-        first(col("discount_amount")).alias("discount_amount"),
-        first(col("eater_rating")).alias("eater_rating"),
-        first(col("courier_rating")).alias("courier_rating"),
-        first(col("merchant_rating")).alias("merchant_rating"),
-        first(col("weather_condition")).alias("weather_condition"),
+        spark_max(when(col("event_type") == "cancelled", col("event_time"))).alias("cancelled_at"),
+        # Prendre les valeurs du dernier événement (les colonnes sont dans Silver maintenant)
+        spark_max(col("subtotal_amount")).alias("subtotal_amount"),
+        spark_max(col("delivery_fee")).alias("delivery_fee"),
+        spark_max(col("service_fee")).alias("service_fee"),
+        spark_max(col("tax_amount")).alias("tax_amount"),
+        spark_max(col("tip_amount")).alias("tip_amount"),
+        spark_max(col("total_amount")).alias("total_amount"),
+        spark_max(col("distance_miles")).alias("distance_miles"),
+        spark_max(col("preparation_time_minutes")).alias("preparation_time_minutes"),
+        spark_max(col("delivery_time_minutes")).alias("delivery_time_minutes"),
+        spark_max(col("is_group_order")).alias("is_group_order"),
+        spark_max(col("promo_code_used")).alias("promo_code_used"),
+        spark_max(col("discount_amount")).alias("discount_amount"),
+        spark_max(col("eater_rating")).alias("eater_rating"),
+        spark_max(col("courier_rating")).alias("courier_rating"),
+        spark_max(col("merchant_rating")).alias("merchant_rating"),
+        spark_max(col("weather_condition")).alias("weather_condition"),
         first(col("date_partition")).alias("date_partition"),
         spark_max(col("event_time")).alias("updated_at")
     )
+).withColumn(
+    # Calculer trip_status depuis les timestamps d'événements
+    "trip_status",
+    when(col("cancelled_at").isNotNull(), "cancelled")
+    .when(col("delivered_at").isNotNull(), "completed")
+    .when(col("dropoff_arrived_at").isNotNull(), "in_delivery")
+    .when(col("pickup_completed_at").isNotNull(), "picked_up")
+    .when(col("courier_dispatched_at").isNotNull(), "dispatched")
+    .when(col("order_accepted_at").isNotNull(), "accepted")
+    .otherwise("pending")
+).withColumn(
+    # Calculer total_time_minutes (order_placed → delivered)
+    "total_time_minutes",
+    when(col("delivered_at").isNotNull(), 
+         (col("delivered_at").cast("long") - col("order_placed_at").cast("long")) / 60)
+    .otherwise(None)
+).withColumn(
+    # Calculer courier_payout (15% de total_amount pour simplifier)
+    "courier_payout",
+    when(col("total_amount").isNotNull(), col("total_amount") * 0.15)
+    .otherwise(None)
 )
 
 # Préparer trip_fact avec valeurs par défaut
@@ -720,24 +741,24 @@ trip_fact_source = trip_aggregated.select(
     col("courier_dispatched_at"),
     col("pickup_arrived_at"),
     col("pickup_completed_at"),
-    lit(None).cast("timestamp").alias("dropoff_arrived_at"),
+    col("dropoff_arrived_at"),
     col("delivered_at"),
-    col("subtotal_amount"),
-    col("delivery_fee"),
-    col("service_fee"),
-    col("tax_amount"),
-    col("tip_amount"),
-    col("total_amount"),
-    col("courier_payout"),
-    col("distance_miles"),
-    col("preparation_time_minutes"),
-    col("delivery_time_minutes"),
-    col("total_time_minutes"),
+    coalesce(col("subtotal_amount"), lit(0)).alias("subtotal_amount"),
+    coalesce(col("delivery_fee"), lit(0)).alias("delivery_fee"),
+    coalesce(col("service_fee"), lit(0)).alias("service_fee"),
+    coalesce(col("tax_amount"), lit(0)).alias("tax_amount"),
+    coalesce(col("tip_amount"), lit(0)).alias("tip_amount"),
+    coalesce(col("total_amount"), lit(0)).alias("total_amount"),
+    coalesce(col("courier_payout"), lit(0)).alias("courier_payout"),
+    coalesce(col("distance_miles"), lit(0)).alias("distance_miles"),
+    coalesce(col("preparation_time_minutes"), lit(0)).alias("preparation_time_minutes"),
+    coalesce(col("delivery_time_minutes"), lit(0)).alias("delivery_time_minutes"),
+    coalesce(col("total_time_minutes"), lit(0)).alias("total_time_minutes"),
     col("trip_status"),
     lit(1).alias("version_number"),
-    col("is_group_order"),
+    coalesce(col("is_group_order"), lit(False)).alias("is_group_order"),
     col("promo_code_used"),
-    col("discount_amount"),
+    coalesce(col("discount_amount"), lit(0)).alias("discount_amount"),
     col("eater_rating"),
     col("courier_rating"),
     col("merchant_rating"),

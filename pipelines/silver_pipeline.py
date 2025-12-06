@@ -101,12 +101,12 @@ def trip_events_silver():
     """
     Transformation Bronze -> Silver pour trip_events.
     - Trip lifecycle events avec order, eater, merchant, courier tracking
-    - Les données sont déjà parsées dans Bronze
+    - Parse le payload JSONB pour extraire les données structurées
     - Applique nettoyage et validation
     """
     df = dlt.read_stream("ubear_catalog.ubear_bronze.trip_events_bronze")
     
-    # Les colonnes sont déjà extraites du payload dans Bronze
+    # Parser le payload JSONB et extraire les colonnes
     silver_df = df.select(
         col("event_id"),
         col("trip_id"),
@@ -116,7 +116,35 @@ def trip_events_silver():
         col("courier_id"),
         col("event_type"),
         col("event_time"),
+        
+        # Extraire depuis payload JSONB (financial)
+        col("payload").getField("subtotal_amount").cast("double").alias("subtotal_amount"),
+        col("payload").getField("delivery_fee").cast("double").alias("delivery_fee"),
+        col("payload").getField("service_fee").cast("double").alias("service_fee"),
+        col("payload").getField("tax_amount").cast("double").alias("tax_amount"),
+        col("payload").getField("tip_amount").cast("double").alias("tip_amount"),
+        col("payload").getField("total_amount").cast("double").alias("total_amount"),
+        col("payload").getField("discount_amount").cast("double").alias("discount_amount"),
+        
+        # Extraire depuis payload JSONB (metrics)
+        col("payload").getField("distance_miles").cast("double").alias("distance_miles"),
+        col("payload").getField("actual_prep_time_minutes").cast("int").alias("preparation_time_minutes"),
+        col("payload").getField("delivery_time_minutes").cast("int").alias("delivery_time_minutes"),
+        
+        # Extraire depuis payload JSONB (ratings)
+        col("payload").getField("eater_rating").cast("int").alias("eater_rating"),
+        col("payload").getField("courier_rating").cast("int").alias("courier_rating"),
+        col("payload").getField("merchant_rating").cast("int").alias("merchant_rating"),
+        
+        # Extraire depuis payload JSONB (context)
+        col("payload").getField("weather_condition").cast("string").alias("weather_condition"),
+        col("payload").getField("promo_code").cast("string").alias("promo_code_used"),
+        col("payload").getField("is_group_order").cast("boolean").alias("is_group_order"),
+        
+        # Garder payload original pour audit
         col("payload"),
+        
+        # CDC metadata
         col("cdc_operation"),
         col("cdc_timestamp"),
         col("cdc_snapshot"),

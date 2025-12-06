@@ -464,7 +464,7 @@ merchant_with_metrics = merchant_silver_df.join(merchant_metrics, "merchant_id",
 )
 
 compare_cols_merchant = [
-    'merchant_name', 'email', 'phone_number', 'business_type', 'cuisine_type',
+    'name', 'email', 'phone_number', 'business_type', 'cuisine_type',
     'address_line_1', 'address_line_2', 'city', 
     'state_province', 'postal_code', 'country',
     'operating_hours', 'is_currently_active'

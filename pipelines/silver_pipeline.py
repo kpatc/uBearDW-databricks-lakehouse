@@ -106,8 +106,14 @@ def trip_events_silver():
     """
     df = dlt.read_stream("ubear_catalog.ubear_bronze.trip_events_bronze")
     
-    # Parser le payload JSONB et extraire les colonnes
-    silver_df = df.select(
+    # Parser le payload JSON STRING en STRUCT
+    payload_parsed = df.select(
+        "*",
+        from_json(col("payload"), trip_payload_schema).alias("payload_struct")
+    )
+    
+    # Extraire les colonnes depuis le payload parsé
+    silver_df = payload_parsed.select(
         col("event_id"),
         col("trip_id"),
         col("order_id"),
@@ -117,29 +123,29 @@ def trip_events_silver():
         col("event_type"),
         col("event_time"),
         
-        # Extraire depuis payload JSONB (financial)
-        col("payload").getField("subtotal_amount").cast("double").alias("subtotal_amount"),
-        col("payload").getField("delivery_fee").cast("double").alias("delivery_fee"),
-        col("payload").getField("service_fee").cast("double").alias("service_fee"),
-        col("payload").getField("tax_amount").cast("double").alias("tax_amount"),
-        col("payload").getField("tip_amount").cast("double").alias("tip_amount"),
-        col("payload").getField("total_amount").cast("double").alias("total_amount"),
-        col("payload").getField("discount_amount").cast("double").alias("discount_amount"),
+        # Extraire depuis payload_struct (financial)
+        col("payload_struct.subtotal_amount").cast("double").alias("subtotal_amount"),
+        col("payload_struct.delivery_fee").cast("double").alias("delivery_fee"),
+        col("payload_struct.service_fee").cast("double").alias("service_fee"),
+        col("payload_struct.tax_amount").cast("double").alias("tax_amount"),
+        col("payload_struct.tip_amount").cast("double").alias("tip_amount"),
+        col("payload_struct.total_amount").cast("double").alias("total_amount"),
+        col("payload_struct.discount_amount").cast("double").alias("discount_amount"),
         
-        # Extraire depuis payload JSONB (metrics)
-        col("payload").getField("distance_miles").cast("double").alias("distance_miles"),
-        col("payload").getField("actual_prep_time_minutes").cast("int").alias("preparation_time_minutes"),
-        col("payload").getField("delivery_time_minutes").cast("int").alias("delivery_time_minutes"),
+        # Extraire depuis payload_struct (metrics)
+        col("payload_struct.distance_miles").cast("double").alias("distance_miles"),
+        col("payload_struct.actual_prep_time_minutes").cast("int").alias("preparation_time_minutes"),
+        col("payload_struct.delivery_time_minutes").cast("int").alias("delivery_time_minutes"),
         
-        # Extraire depuis payload JSONB (ratings)
-        col("payload").getField("eater_rating").cast("int").alias("eater_rating"),
-        col("payload").getField("courier_rating").cast("int").alias("courier_rating"),
-        col("payload").getField("merchant_rating").cast("int").alias("merchant_rating"),
+        # Extraire depuis payload_struct (ratings)
+        col("payload_struct.eater_rating").cast("int").alias("eater_rating"),
+        col("payload_struct.courier_rating").cast("int").alias("courier_rating"),
+        col("payload_struct.merchant_rating").cast("int").alias("merchant_rating"),
         
-        # Extraire depuis payload JSONB (context)
-        col("payload").getField("weather_condition").cast("string").alias("weather_condition"),
-        col("payload").getField("promo_code").cast("string").alias("promo_code_used"),
-        col("payload").getField("is_group_order").cast("boolean").alias("is_group_order"),
+        # Extraire depuis payload_struct (context)
+        col("payload_struct.weather_condition").cast("string").alias("weather_condition"),
+        col("payload_struct.promo_code").cast("string").alias("promo_code_used"),
+        col("payload_struct.is_group_order").cast("boolean").alias("is_group_order"),
         
         # Garder payload original pour audit
         col("payload"),

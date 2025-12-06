@@ -672,7 +672,7 @@ trip_with_locations = trip_with_pickup.join(
 
 # Agrégation par trip pour obtenir les timestamps de chaque événement
 trip_aggregated = (trip_with_locations
-    .groupBy("trip_id", "order_id", "eater_id", "merchant_id", "courier_id", 
+    .groupBy("trip_id", "order_id", "eater_id", "merchant_id", "courier_id",
              "pickup_location_id", "dropoff_location_id", "region_zone")
     .agg(
         spark_max(when(col("event_type") == "order_placed", col("event_time"))).alias("order_placed_at"),
@@ -700,9 +700,12 @@ trip_aggregated = (trip_with_locations
         spark_max(col("courier_rating")).alias("courier_rating"),
         spark_max(col("merchant_rating")).alias("merchant_rating"),
         spark_max(col("weather_condition")).alias("weather_condition"),
-        first(col("date_partition")).alias("date_partition"),
         spark_max(col("event_time")).alias("updated_at")
     )
+).withColumn(
+    # Calculer date_partition depuis order_placed_at
+    "date_partition",
+    to_date(col("order_placed_at"))
 ).withColumn(
     # Calculer trip_status depuis les timestamps d'événements
     "trip_status",

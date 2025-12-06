@@ -134,12 +134,11 @@ def apply_scd2_merge(
     )
     
     # Vérifier si la table existe
+    table_exists = False
     try:
-        target_delta = DeltaTable.forName(spark, target_table)
-        table_exists = True
+        table_exists = spark.catalog.tableExists(target_table)
     except:
         table_exists = False
-        print(f"Table {target_table} n'existe pas - création initiale")
     
     if not table_exists:
         # Première charge - insérer toutes les lignes avec colonnes SCD2
@@ -159,6 +158,7 @@ def apply_scd2_merge(
         return
     
     # Récupérer les enregistrements courants
+    target_delta = DeltaTable.forName(spark, target_table)
     current_records = spark.table(target_table).filter(col("is_current") == True)
     
     # Joindre source et cible sur business keys
@@ -421,8 +421,8 @@ apply_scd2_merge(
 merchant_silver_df = spark.table(f"{CATALOG}.{SCHEMA_SILVER}.merchant_silver")
 
 # Calculer métriques agrégées depuis trip_events
+# Note: Silver ne filtre pas par trip_status, on prend tous les events
 merchant_metrics = (trip_events_silver_df
-    .filter(col("trip_status") == "delivered")
     .groupBy("merchant_id")
     .agg(
         avg("merchant_rating").alias("overall_rating"),
@@ -488,13 +488,12 @@ courier_silver_df = spark.table(f"{CATALOG}.{SCHEMA_SILVER}.courier_silver")
 
 # Calculer métriques agrégées
 courier_metrics = (trip_events_silver_df
-    .filter(col("trip_status") == "delivered")
     .groupBy("courier_id")
     .agg(
         count("*").alias("total_deliveries_completed"),
         avg("courier_rating").alias("overall_rating"),
         avg("delivery_time_minutes").alias("average_delivery_time_minutes"),
-        spark_sum("courier_payout").alias("total_lifetime_earnings"),
+        spark_sum("total_amount").alias("total_lifetime_earnings"),
         # Calcul on-time rate (simplifié)
         (count(when(col("delivery_time_minutes") <= 30, 1)) / count("*") * 100).alias("on_time_delivery_rate"),
         (count("*") / count("*") * 100).alias("acceptance_rate")  # Simplifié

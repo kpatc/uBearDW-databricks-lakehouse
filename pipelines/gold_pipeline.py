@@ -771,9 +771,9 @@ trip_fact_source = trip_aggregated.select(
 )
 
 # Vérifier si trip_fact existe
+table_exists = False
 try:
-    trip_fact_delta = DeltaTable.forName(spark, f"{CATALOG}.{SCHEMA_GOLD}.trip_fact")
-    table_exists = True
+    table_exists = spark.catalog.tableExists(f"{CATALOG}.{SCHEMA_GOLD}.trip_fact")
 except:
     table_exists = False
 
@@ -786,6 +786,7 @@ if not table_exists:
     print(f"✅ trip_fact créée avec {trip_fact_source.count():,} enregistrements")
 else:
     # MERGE pour upserts
+    trip_fact_delta = DeltaTable.forName(spark, f"{CATALOG}.{SCHEMA_GOLD}.trip_fact")
     trip_fact_delta.alias("target").merge(
         trip_fact_source.alias("source"),
         "target.trip_id = source.trip_id"
